@@ -1,0 +1,16 @@
+{
+  "name": "flowdata",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@typescript-eslint/typescript-estree": "^8.61.0",
+    "acorn": "^8.16.0"
+  }
+}
