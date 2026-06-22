@@ -24,6 +24,8 @@ class Ranker {                                    // class
   score(result) { return result.value; }          // method + its param
 }
 
+const { a, b: { c }, ...rest } = obj;
+
 enum Mode { Fast, Slow }                          // TS enum
 interface Config { url: string }                  // TS interface
 type Result = { score: number };                  // TS type alias
