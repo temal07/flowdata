@@ -1,7 +1,7 @@
 import { parse } from "@typescript-eslint/typescript-estree";
 import type { Binding, Kind } from "./types";
 
-interface Results {
+export interface Results {
     uses: Binding[];
     declarations: Binding[];
 }
@@ -12,50 +12,57 @@ const code = await Bun.file(FILE).text();
 // loc gives us line numbers, which is off by default in typescript-estree.
 const tree = parse(code, { loc: true });
 
-const results: Results = {
-    uses: [],
-    declarations: [],
-};
-
-collectVariables(tree, results);
-console.log(results);
+console.log(collectVariables(tree));
 
 // Build a Binding from an Identifier-like node (something with a `.name`).
 // varType is the declaration keyword (var/let/const) for variables, and ""
-// for binding kinds where it doesn't apply (params, functions, uses, ...).
-function makeBinding(idNode: any, kind: Kind, varType = ""): Binding {
+// for binding kinds where it doesn't apply (params, functions, ...).
+function makeBinding(
+    idNode: any,
+    role: Binding["role"],
+    kind: Kind,
+    varType = "",
+): Binding {
     return {
         name: idNode.name,
         line: idNode.loc?.start.line ?? -1,
         varType,
         file: FILE,
         kind,
+        role,
     };
 }
 
-function collectVariables(node: any, results: Results): Results {
+
+export function collectVariables(node: any): Results {
+    const results: Results = { uses: [], declarations: [] };
+    walkVariables(node, results);
+    return results;
+}
+
+function walkVariables(node: any, results: Results): void {
     // 1. null / undefined — skip
     if (node === null || node === undefined) {
-        return results;
+        return;
     }
 
     // 2. primitives — nothing to descend into
     if (typeof node !== "object") {
-        return results;
+        return;
     }
 
     // 3. arrays — recurse element-wise
     if (Array.isArray(node)) {
         for (const item of node) {
-            collectVariables(item, results);
+            walkVariables(item, results);
         }
-        return results;
+        return;
     }
 
     // import { parse } from "acorn" — each specifier binds a local name
     if (node.type === "ImportDeclaration") {
         for (const spec of node.specifiers) {
-            results.declarations.push(makeBinding(spec.local, "variable"));
+            results.declarations.push(makeBinding(spec.local, "declaration", "variable"));
         }
     }
 
@@ -85,7 +92,7 @@ function collectVariables(node: any, results: Results): Results {
         node.type === "ArrowFunctionExpression"
     ) {
         if (node.id) {
-            results.declarations.push(makeBinding(node.id, "function"));
+            results.declarations.push(makeBinding(node.id, "declaration", "function"));
         }
         for (const param of node.params) {
             collectPatternNames(param, results.declarations, "param");
@@ -99,13 +106,13 @@ function collectVariables(node: any, results: Results): Results {
 
     // class Ranker {} — the class name
     if (node.type === "ClassDeclaration" && node.id) {
-        results.declarations.push(makeBinding(node.id, "class"));
+        results.declarations.push(makeBinding(node.id, "declaration", "class"));
     }
 
     // score(result) {} — the method name; its params are picked up when
     // recursion reaches the method's FunctionExpression value
     if (node.type === "MethodDefinition") {
-        results.declarations.push(makeBinding(node.key, "function"));
+        results.declarations.push(makeBinding(node.key, "declaration", "function"));
     }
 
     // TS-only declarations: enum Mode, interface Config, type Result
@@ -114,15 +121,13 @@ function collectVariables(node: any, results: Results): Results {
         node.type === "TSInterfaceDeclaration" ||
         node.type === "TSTypeAliasDeclaration"
     ) {
-        results.declarations.push(makeBinding(node.id, "type"));
+        results.declarations.push(makeBinding(node.id, "declaration", "type"));
     }
 
     // 4. plain object — recurse into every value
     for (const value of Object.values(node)) {
-        collectVariables(value, results);
+        walkVariables(value, results);
     }
-
-    return results;
 }
 
 // A binding position (variable id, function param, catch param) isn't always
@@ -130,7 +135,7 @@ function collectVariables(node: any, results: Results): Results {
 // or a rest element, and these nest inside each other. `kind` is the kind to
 // tag every name found beneath this pattern with; `varType` carries the
 // var/let/const keyword through to each leaf identifier.
-function collectPatternNames(pattern: any, declarations: Binding[], kind: Kind, varType = "") {
+export function collectPatternNames(pattern: any, declarations: Binding[], kind: Kind, varType = "") {
     if (pattern === null || pattern === undefined) {
         return;
     }
@@ -138,7 +143,7 @@ function collectPatternNames(pattern: any, declarations: Binding[], kind: Kind, 
     switch (pattern.type) {
         // x
         case "Identifier":
-            declarations.push(makeBinding(pattern, kind, varType));
+            declarations.push(makeBinding(pattern, "declaration", kind, varType));
             break;
 
         // { query, limit = 10 } — each property's value is itself a pattern;
@@ -174,7 +179,7 @@ function collectPatternNames(pattern: any, declarations: Binding[], kind: Kind, 
 
 // Walk an initializer expression and record every identifier referenced in it
 // as a "use" binding.
-function collectUses(node: any, uses: Binding[]) {
+export function collectUses(node: any, uses: Binding[]) {
     // Same base cases as collectVariables: skip null/undefined and non-objects.
     // Without this, recursing into a string would loop forever
     // (Object.values("a") === ["a"]).
@@ -190,7 +195,7 @@ function collectUses(node: any, uses: Binding[]) {
     }
 
     if (node.type === "Identifier") {
-        uses.push(makeBinding(node, "use"));
+        uses.push(makeBinding(node, "use", "variable"));
     }
 
     for (const value of Object.values(node)) {

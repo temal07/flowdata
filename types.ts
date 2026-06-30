@@ -3,10 +3,7 @@ export type Kind = "function" |
     "class" |
     "variable" |
     "type" |
-    "use" |
     "catch";
-
-// the Binding interface defines the use or declaration of a variable
 
 export interface Binding {
     name: string;
@@ -14,5 +11,5 @@ export interface Binding {
     varType: string;
     file: string;
     kind: Kind;
-    
+    role: "declaration" | "use";
 }
