@@ -36,4 +36,4 @@ function getDataFlow(query: unknown) {
     }
 }
 
-console.log(getDataFlow("rank"));
+console.log(getDataFlow("query"));

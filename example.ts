@@ -1,5 +1,7 @@
 function rank(query : any) {
     return query;
-}
+}   
 
-rank(query)
+const query = 2;
+
+rank(query);

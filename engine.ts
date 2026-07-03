@@ -1,5 +1,6 @@
 import { parse } from "@typescript-eslint/typescript-estree";
 import type { Binding, Kind } from "./types";
+import type { Node } from "typescript";
 
 export interface Results {
     uses: Binding[];
@@ -12,7 +13,7 @@ const code = await Bun.file(FILE).text();
 // loc gives us line numbers, which is off by default in typescript-estree.
 const tree = parse(code, { loc: true });
 
-console.log(collectVariables(tree));
+//  console.log(collectVariables(tree));
 
 // Build a Binding from an Identifier-like node (something with a `.name`).
 // varType is the declaration keyword (var/let/const) for variables, and ""
@@ -33,10 +34,16 @@ function makeBinding(
     };
 }
 
-
 export function collectVariables(node: any): Results {
     const results: Results = { uses: [], declarations: [] };
     walkVariables(node, results);
+    // Assume every identifier is a use by default; subtract the ones sitting at
+    // a declaration position (matched by line for now).
+    const declarationLines = new Set(results.declarations.map(b => b.line));
+    results.uses = getIdentifiers(tree)
+        .filter(id => !declarationLines.has(id.loc.start.line))
+        .map(id => makeBinding(id, "use", "variable", ""));
+
     return results;
 }
 
@@ -73,14 +80,13 @@ function walkVariables(node: any, results: Results): void {
     if (node.type === "VariableDeclaration") {
         for (const decl of node.declarations) {
             collectPatternNames(decl.id, results.declarations, "variable", node.kind);
-            collectUses(decl.init, results.uses);
         }
     }
 
     // A bare expression statement — e.g. `rank(query)` — references variables
     // without declaring anything, so its identifiers are all uses.
     if (node.type === "ExpressionStatement") {
-        collectUses(node.expression, results.uses);
+        
     }
 
     // Functions: declaration, expression, arrow.
@@ -177,28 +183,19 @@ export function collectPatternNames(pattern: any, declarations: Binding[], kind:
     }
 }
 
-// Walk an initializer expression and record every identifier referenced in it
-// as a "use" binding.
-export function collectUses(node: any, uses: Binding[]) {
-    // Same base cases as collectVariables: skip null/undefined and non-objects.
-    // Without this, recursing into a string would loop forever
-    // (Object.values("a") === ["a"]).
+function getIdentifiers(node: any): any[] {
+    const identifiers: any[] = [];
     if (node === null || node === undefined || typeof node !== "object") {
-        return;
-    }
-
-    if (Array.isArray(node)) {
-        for (const item of node) {
-            collectUses(item, uses);
-        }
-        return;
+        return identifiers;
     }
 
     if (node.type === "Identifier") {
-        uses.push(makeBinding(node, "use", "variable"));
+        identifiers.push(node);
     }
 
     for (const value of Object.values(node)) {
-        collectUses(value, uses);
+        identifiers.push(...getIdentifiers(value));
     }
+
+    return identifiers;
 }
