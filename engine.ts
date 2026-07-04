@@ -1,5 +1,5 @@
 import { parse } from "@typescript-eslint/typescript-estree";
-import type { Binding, Kind } from "./types";
+import type { Binding, Kind, Scope } from "./types";
 import type { Node } from "typescript";
 
 export interface Results {
@@ -11,9 +11,17 @@ const FILE = "example.ts";
 const code = await Bun.file(FILE).text();
 
 // loc gives us line numbers, which is off by default in typescript-estree.
-const tree = parse(code, { loc: true });
+const tree = parse(code, { loc: true, range: true });
 
 //  console.log(collectVariables(tree));
+
+// A stack to know which scope we're in. The stack is used to add and remove
+// scopes so that any 2 or more variable with the same name can be found without 
+// ambiguity.
+const stack : Scope[] = [ { name: "global", declarations:[] as Binding[] } ];
+
+
+
 
 // Build a Binding from an Identifier-like node (something with a `.name`).
 // varType is the declaration keyword (var/let/const) for variables, and ""
@@ -27,6 +35,7 @@ function makeBinding(
     return {
         name: idNode.name,
         line: idNode.loc?.start.line ?? -1,
+        start: idNode.range?.[0] ?? -1,
         varType,
         file: FILE,
         kind,
@@ -38,7 +47,7 @@ export function collectVariables(node: any): Results {
     const results: Results = { uses: [], declarations: [] };
     walkVariables(node, results);
     // Assume every identifier is a use by default; subtract the ones sitting at
-    // a declaration position (matched by line for now).
+    // a declaration position (matched by line for now). MATCHING BY POSITION NOW
     const declarationLines = new Set(results.declarations.map(b => b.line));
     results.uses = getIdentifiers(tree)
         .filter(id => !declarationLines.has(id.loc.start.line))
@@ -66,6 +75,18 @@ function walkVariables(node: any, results: Results): void {
         return;
     }
 
+    if (node.type === "Identifier") {
+        for (let i = stack.length - 1; i >= 0; i--) {
+            // A found 
+            const found = stack[i]?.declarations.find(d => d.name === node.name);
+            if (found) {
+                if (node.range[0] === found.start) break;
+                console.log(`use "${node.name}" at line ${node.loc.start.line} binds to line ${found.line} in scope ${stack[i]?.name}`);
+                break;
+            }
+        }
+    }
+
     // import { parse } from "acorn" — each specifier binds a local name
     if (node.type === "ImportDeclaration") {
         for (const spec of node.specifiers) {
@@ -79,7 +100,7 @@ function walkVariables(node: any, results: Results): void {
     // the init is where uses live, so harvest those as "use" bindings.
     if (node.type === "VariableDeclaration") {
         for (const decl of node.declarations) {
-            collectPatternNames(decl.id, results.declarations, "variable", node.kind);
+            collectPatternNames(decl.id, stack[stack.length -1]!.declarations, "variable", node.kind);
         }
     }
 
@@ -99,6 +120,11 @@ function walkVariables(node: any, results: Results): void {
     ) {
         if (node.id) {
             results.declarations.push(makeBinding(node.id, "declaration", "function"));
+            stack.push({
+                name: node.id.name, 
+                declarations: node.params.map((param: any) => makeBinding(param, "declaration", "param", "N/A"))
+            });
+       
         }
         for (const param of node.params) {
             collectPatternNames(param, results.declarations, "param");
@@ -133,6 +159,15 @@ function walkVariables(node: any, results: Results): void {
     // 4. plain object — recurse into every value
     for (const value of Object.values(node)) {
         walkVariables(value, results);
+    }
+
+        // AFTER the Object.values loop (pop):
+    if (node.type === "FunctionDeclaration" ||
+        node.type === "FunctionExpression" ||
+        node.type === "ArrowFunctionExpression") {
+        stack.map((elem) => console.log(elem));
+        stack.pop();
+        console.log(`POPPED — stack is now: [${stack.map(s => s.name).join(", ")}]`);
     }
 }
 
@@ -199,3 +234,8 @@ function getIdentifiers(node: any): any[] {
 
     return identifiers;
 }
+
+// console.log("Logging all elems that come back from getIdentifiers: \n", JSON.stringify(getIdentifiers(tree), null, 2));
+console.log("Stack before:", stack);
+console.log("Testing push/pop functionality (stack):", collectVariables(tree));
+console.log("Stack after:", JSON.stringify(stack, null, 2));

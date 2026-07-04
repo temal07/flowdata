@@ -11,5 +11,11 @@ export interface Binding {
     varType: string;
     file: string;
     kind: Kind;
+    start: number;
     role: "declaration" | "use";
+}
+
+export type Scope = {
+    name: string;
+    declarations: Binding[];
 }
