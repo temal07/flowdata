@@ -13,16 +13,6 @@ const code = await Bun.file(FILE).text();
 // loc gives us line numbers, which is off by default in typescript-estree.
 const tree = parse(code, { loc: true, range: true });
 
-//  console.log(collectVariables(tree));
-
-// A stack to know which scope we're in. The stack is used to add and remove
-// scopes so that any 2 or more variable with the same name can be found without 
-// ambiguity.
-const stack : Scope[] = [ { name: "global", declarations:[] as Binding[] } ];
-
-
-
-
 // Build a Binding from an Identifier-like node (something with a `.name`).
 // varType is the declaration keyword (var/let/const) for variables, and ""
 // for binding kinds where it doesn't apply (params, functions, ...).
@@ -40,23 +30,22 @@ function makeBinding(
         file: FILE,
         kind,
         role,
+        uses: [],
     };
 }
 
 export function collectVariables(node: any): Results {
     const results: Results = { uses: [], declarations: [] };
-    walkVariables(node, results);
-    // Assume every identifier is a use by default; subtract the ones sitting at
-    // a declaration position (matched by line for now). MATCHING BY POSITION NOW
-    const declarationLines = new Set(results.declarations.map(b => b.line));
-    results.uses = getIdentifiers(tree)
-        .filter(id => !declarationLines.has(id.loc.start.line))
-        .map(id => makeBinding(id, "use", "variable", ""));
-
+    // A stack to know which scope we're in, so that 2 or more variables with
+    // the same name can be found without ambiguity. Created fresh per call so
+    // repeated invocations don't leak declarations/uses from earlier walks.
+    const stack: Scope[] = [{ name: "global", declarations: [] as Binding[] }];
+    walkVariables(node, results, stack);
+    results.declarations.push(...stack[0]!.declarations);   // save global
     return results;
 }
 
-function walkVariables(node: any, results: Results): void {
+function walkVariables(node: any, results: Results, stack: Scope[]): void {
     // 1. null / undefined — skip
     if (node === null || node === undefined) {
         return;
@@ -70,7 +59,7 @@ function walkVariables(node: any, results: Results): void {
     // 3. arrays — recurse element-wise
     if (Array.isArray(node)) {
         for (const item of node) {
-            walkVariables(item, results);
+            walkVariables(item, results, stack);
         }
         return;
     }
@@ -81,7 +70,8 @@ function walkVariables(node: any, results: Results): void {
             const found = stack[i]?.declarations.find(d => d.name === node.name);
             if (found) {
                 if (node.range[0] === found.start) break;
-                console.log(`use "${node.name}" at line ${node.loc.start.line} binds to line ${found.line} in scope ${stack[i]?.name}`);
+                found.uses.push(makeBinding(node, "use", "variable"))
+                // console.log(`use "${node.name}" at line ${node.loc.start.line} binds to line ${found.line} in scope ${stack[i]?.name}`);
                 break;
             }
         }
@@ -126,9 +116,6 @@ function walkVariables(node: any, results: Results): void {
             });
        
         }
-        for (const param of node.params) {
-            collectPatternNames(param, results.declarations, "param");
-        }
     }
 
     // try {} catch (err) {} — the catch param (optional since ES2019)
@@ -158,16 +145,16 @@ function walkVariables(node: any, results: Results): void {
 
     // 4. plain object — recurse into every value
     for (const value of Object.values(node)) {
-        walkVariables(value, results);
+        walkVariables(value, results, stack);
     }
 
         // AFTER the Object.values loop (pop):
     if (node.type === "FunctionDeclaration" ||
         node.type === "FunctionExpression" ||
         node.type === "ArrowFunctionExpression") {
-        stack.map((elem) => console.log(elem));
+        const closing = stack[stack.length - 1]!;
+        results.declarations.push(...closing.declarations);
         stack.pop();
-        console.log(`POPPED — stack is now: [${stack.map(s => s.name).join(", ")}]`);
     }
 }
 
@@ -235,7 +222,4 @@ function getIdentifiers(node: any): any[] {
     return identifiers;
 }
 
-// console.log("Logging all elems that come back from getIdentifiers: \n", JSON.stringify(getIdentifiers(tree), null, 2));
-console.log("Stack before:", stack);
-console.log("Testing push/pop functionality (stack):", collectVariables(tree));
-console.log("Stack after:", JSON.stringify(stack, null, 2));
+console.log("Testing push/pop functionality (stack):", JSON.stringify(collectVariables(tree), null, 2));

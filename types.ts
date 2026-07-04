@@ -13,6 +13,7 @@ export interface Binding {
     kind: Kind;
     start: number;
     role: "declaration" | "use";
+    uses: Binding[]
 }
 
 export type Scope = {

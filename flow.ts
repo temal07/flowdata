@@ -5,7 +5,7 @@ const FILE = "example.ts";
 const code = await Bun.file(FILE).text();
 
 // loc gives us line numbers, which is off by default in typescript-estree.
-const tree = parse(code, { loc: true });
+const tree = parse(code, { loc: true, range: true });
 
 /*
     the function collectVariables uses a tree 
@@ -23,17 +23,9 @@ function getDataFlow(query: unknown) {
         2. Then use the tree to find the name that matches with query
     */
 
-    const variableTree = collectVariables(tree);
+    const results = collectVariables(tree);
 
-    const matches = [...variableTree.declarations, ...variableTree.uses].filter(b => b.name === query);
-
-    if (matches.length === 0) return null;
-
-    return {
-      name: query, 
-      declaredAt: matches.filter(b => b.role === "declaration").map((b: any) => ({ file: b.file, line: b.line, kind: b.kind })),
-      usedAt: matches.filter((b: any) => b.role === "use").map((b: any) => ({ file: b.file, line: b.line, kind: b.kind }))      
-    }
+    return JSON.stringify(results.declarations.filter(d => d.name === query), null, 2);
 }
 
-console.log(getDataFlow("query"));
+console.log("Query: ", getDataFlow("query"));
