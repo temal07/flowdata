@@ -7,6 +7,8 @@ const code = await Bun.file(FILE).text();
 // loc gives us line numbers, which is off by default in typescript-estree.
 const tree = parse(code, { loc: true, range: true });
 
+const testedVariable : string = "x"
+
 /*
     the function collectVariables uses a tree 
     (indicated by the node param) to give ALL 
@@ -28,4 +30,4 @@ function getDataFlow(query: unknown) {
     return JSON.stringify(results.declarations.filter(d => d.name === query), null, 2);
 }
 
-console.log("Query: ", getDataFlow("query"));
+console.log(`${testedVariable}`, getDataFlow(`${testedVariable}`));

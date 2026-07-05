@@ -39,7 +39,7 @@ export function collectVariables(node: any): Results {
     // A stack to know which scope we're in, so that 2 or more variables with
     // the same name can be found without ambiguity. Created fresh per call so
     // repeated invocations don't leak declarations/uses from earlier walks.
-    const stack: Scope[] = [{ name: "global", declarations: [] as Binding[] }];
+    const stack: Scope[] = [{ name: "global", declarations: [] }];
     walkVariables(node, results, stack);
     results.declarations.push(...stack[0]!.declarations);   // save global
     return results;
@@ -63,6 +63,7 @@ function walkVariables(node: any, results: Results, stack: Scope[]): void {
         }
         return;
     }
+
 
     if (node.type === "Identifier") {
         for (let i = stack.length - 1; i >= 0; i--) {
@@ -108,14 +109,22 @@ function walkVariables(node: any, results: Results, stack: Scope[]): void {
         node.type === "FunctionExpression" ||
         node.type === "ArrowFunctionExpression"
     ) {
+        // 1. Put the function's name in the CURRENT scope (before pushing the new one)
+        // This adds to the DECLARATIONS array that is one of stack's keys which is an array
         if (node.id) {
-            results.declarations.push(makeBinding(node.id, "declaration", "function"));
-            stack.push({
-                name: node.id.name, 
-                declarations: node.params.map((param: any) => makeBinding(param, "declaration", "param", "N/A"))
-            });
-       
+            stack[stack.length - 1]!.declarations.push(makeBinding(node.id, "declaration", "function", "N/A"));
         }
+    
+        // 2. Build the params, then push the function's own new scope
+        // This adds a COMPLETELY NEW SCOPE to the stack ITSELF
+        const paramDeclarations: Binding[] = [];
+        for (const param of node.params) {
+            collectPatternNames(param, paramDeclarations, "param", "N/A");
+        }
+        stack.push({
+            name: node.id?.name ?? "anonymous",
+            declarations: paramDeclarations
+        });
     }
 
     // try {} catch (err) {} — the catch param (optional since ES2019)
@@ -186,7 +195,7 @@ export function collectPatternNames(pattern: any, declarations: Binding[], kind:
             }
             break;
 
-        // [first, ...rest] — elements can be null for holes: [, second]
+
         case "ArrayPattern":
             for (const element of pattern.elements) {
                 collectPatternNames(element, declarations, kind, varType);
@@ -203,23 +212,6 @@ export function collectPatternNames(pattern: any, declarations: Binding[], kind:
             collectPatternNames(pattern.argument, declarations, kind, varType);
             break;
     }
-}
-
-function getIdentifiers(node: any): any[] {
-    const identifiers: any[] = [];
-    if (node === null || node === undefined || typeof node !== "object") {
-        return identifiers;
-    }
-
-    if (node.type === "Identifier") {
-        identifiers.push(node);
-    }
-
-    for (const value of Object.values(node)) {
-        identifiers.push(...getIdentifiers(value));
-    }
-
-    return identifiers;
 }
 
 console.log("Testing push/pop functionality (stack):", JSON.stringify(collectVariables(tree), null, 2));
