@@ -7,7 +7,7 @@ const code = await Bun.file(FILE).text();
 // loc gives us line numbers, which is off by default in typescript-estree.
 const tree = parse(code, { loc: true, range: true });
 
-const testedVariable : string = "x"
+const testedVariable : string = "secret"
 
 /*
     the function collectVariables uses a tree 

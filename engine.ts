@@ -122,9 +122,16 @@ function walkVariables(node: any, results: Results, stack: Scope[]): void {
             collectPatternNames(param, paramDeclarations, "param", "N/A");
         }
         stack.push({
-            name: node.id?.name ?? "anonymous",
+            name: node.id?.name ?? "anonymous_func",
             declarations: paramDeclarations
         });
+    }
+
+    if (node.type === "BlockStatement") {
+        stack.push({
+            name: "block",
+            declarations: [],
+        })
     }
 
     // try {} catch (err) {} — the catch param (optional since ES2019)
@@ -161,6 +168,12 @@ function walkVariables(node: any, results: Results, stack: Scope[]): void {
     if (node.type === "FunctionDeclaration" ||
         node.type === "FunctionExpression" ||
         node.type === "ArrowFunctionExpression") {
+        const closing = stack[stack.length - 1]!;
+        results.declarations.push(...closing.declarations);
+        stack.pop();
+    }
+    
+    if (node.type === "BlockStatement") {
         const closing = stack[stack.length - 1]!;
         results.declarations.push(...closing.declarations);
         stack.pop();

@@ -1,13 +1,7 @@
-function rank(query : any) {
-    return query;
-}   
-
-function k({ query, limit }: any) {
-    return query;
+if (true) {
+    const secret = 5;
+    console.log(secret);
 }
 
-const query = 2;
-
-rank(query);
-
-const f = (x: number) => x + 1;
+let secret = 10;
+secret += 2;

@@ -3,6 +3,7 @@ export type Kind = "function" |
     "class" |
     "variable" |
     "type" |
+    "conditional" |
     "catch";
 
 export interface Binding {
