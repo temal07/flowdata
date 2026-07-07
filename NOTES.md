@@ -5,3 +5,5 @@ Destructured params — node.params.map(makeBinding) still assumes simple identi
 Block scope — if/for blocks create scopes too, not just functions. Currently only functions push.
 The uses: [] on use-bindings — cosmetic modeling wart, the two-type refactor.
 Then: the MCP wrapper — now there's a true, scope-correct payload worth serving.
+
+Known limitation: use-before-declaration doesn't resolve. Single-pass walk assumes every declaration is visited before its uses. Breaks when a use precedes its declaration in walk order — e.g. for loop body walked before the let i init, and function hoisting (foo(); function foo(){}). Fix is two-pass resolution (pass 1 collect declarations, pass 2 resolve uses), deferred — the hard part is carrying each scope's declarations from pass 1 into pass 2.

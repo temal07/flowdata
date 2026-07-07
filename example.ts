@@ -1,7 +1,3 @@
-if (true) {
-    const secret = 5;
-    console.log(secret);
+function extractQuery({ query, limit = 10 }: { query: string; limit?: number }) {
+  return query.slice(0, limit);
 }
-
-let secret = 10;
-secret += 2;

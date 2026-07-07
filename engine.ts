@@ -66,11 +66,13 @@ function walkVariables(node: any, results: Results, stack: Scope[]): void {
 
 
     if (node.type === "Identifier") {
+        console.log(`visiting identifier: ${node.name} at line ${node.loc.start.line}`);
         for (let i = stack.length - 1; i >= 0; i--) {
             // A found 
             const found = stack[i]?.declarations.find(d => d.name === node.name);
             if (found) {
-                if (node.range[0] === found.start) break;
+                console.log(`  matched ${node.name}@${node.loc.start.line} to decl@${found.line}, node.start=${node.range[0]}, found.start=${found.start}`);
+                if (node.range[0] === found.start) { console.log("  → SKIPPED (treated as declaration)"); break; }
                 found.uses.push(makeBinding(node, "use", "variable"))
                 // console.log(`use "${node.name}" at line ${node.loc.start.line} binds to line ${found.line} in scope ${stack[i]?.name}`);
                 break;
@@ -90,6 +92,7 @@ function walkVariables(node: any, results: Results, stack: Scope[]): void {
     // The id can be a destructuring pattern, so go through collectPatternNames;
     // the init is where uses live, so harvest those as "use" bindings.
     if (node.type === "VariableDeclaration") {
+        console.log(`declaring in scope: ${stack[stack.length-1]!.name}`);
         for (const decl of node.declarations) {
             collectPatternNames(decl.id, stack[stack.length -1]!.declarations, "variable", node.kind);
         }
@@ -157,6 +160,12 @@ function walkVariables(node: any, results: Results, stack: Scope[]): void {
         node.type === "TSTypeAliasDeclaration"
     ) {
         results.declarations.push(makeBinding(node.id, "declaration", "type"));
+    }
+
+    // Don't recurse into TypeAnnotation since it's just noise
+    // and incorrectly puts the variable into uses array.
+    if (node.type === "TSTypeAnnotation") {
+        return;
     }
 
     // 4. plain object — recurse into every value
