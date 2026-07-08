@@ -13,6 +13,9 @@ const code = await Bun.file(FILE).text();
 // loc gives us line numbers, which is off by default in typescript-estree.
 const tree = parse(code, { loc: true, range: true });
 
+// Define the file
+let currentFile = "";
+
 // Build a Binding from an Identifier-like node (something with a `.name`).
 // varType is the declaration keyword (var/let/const) for variables, and ""
 // for binding kinds where it doesn't apply (params, functions, ...).
@@ -27,14 +30,15 @@ function makeBinding(
         line: idNode.loc?.start.line ?? -1,
         start: idNode.range?.[0] ?? -1,
         varType,
-        file: FILE,
+        file: currentFile,
         kind,
         role,
         uses: [],
     };
 }
 
-export function collectVariables(node: any): Results {
+export function collectVariables(node: any, file: string): Results {
+    currentFile = file;
     const results: Results = { uses: [], declarations: [] };
     // A stack to know which scope we're in, so that 2 or more variables with
     // the same name can be found without ambiguity. Created fresh per call so
@@ -66,15 +70,12 @@ function walkVariables(node: any, results: Results, stack: Scope[]): void {
 
 
     if (node.type === "Identifier") {
-        console.log(`visiting identifier: ${node.name} at line ${node.loc.start.line}`);
         for (let i = stack.length - 1; i >= 0; i--) {
             // A found 
             const found = stack[i]?.declarations.find(d => d.name === node.name);
             if (found) {
-                console.log(`  matched ${node.name}@${node.loc.start.line} to decl@${found.line}, node.start=${node.range[0]}, found.start=${found.start}`);
-                if (node.range[0] === found.start) { console.log("  → SKIPPED (treated as declaration)"); break; }
+                if (node.range[0] === found.start) { break; }
                 found.uses.push(makeBinding(node, "use", "variable"))
-                // console.log(`use "${node.name}" at line ${node.loc.start.line} binds to line ${found.line} in scope ${stack[i]?.name}`);
                 break;
             }
         }
@@ -92,7 +93,6 @@ function walkVariables(node: any, results: Results, stack: Scope[]): void {
     // The id can be a destructuring pattern, so go through collectPatternNames;
     // the init is where uses live, so harvest those as "use" bindings.
     if (node.type === "VariableDeclaration") {
-        console.log(`declaring in scope: ${stack[stack.length-1]!.name}`);
         for (const decl of node.declarations) {
             collectPatternNames(decl.id, stack[stack.length -1]!.declarations, "variable", node.kind);
         }
@@ -235,5 +235,3 @@ export function collectPatternNames(pattern: any, declarations: Binding[], kind:
             break;
     }
 }
-
-console.log("Testing push/pop functionality (stack):", JSON.stringify(collectVariables(tree), null, 2));

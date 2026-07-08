@@ -7,17 +7,20 @@ import { Glob } from "bun";
 const glob = new Glob("**/*.ts");           // ** = all subfolders, *.ts = TypeScript files
 const projectDir = import.meta.dir;         // the folder you want to analyze
 
+const testedVariable : string = "limit"
+const FILE = `${import.meta.dir}/example.ts`;
+
+const treeResults = {};
+
 for await (const file of glob.scan(projectDir)) {
-    console.log(file);                       // each .ts file path, one at a time
+    const code = await Bun.file(file).text();
+    const tree = parse(code, { loc: true, range: true });
+    (treeResults as Record<string, unknown>)[file] = collectVariables(tree, `${projectDir}/${file}`);   
 }
 
-const FILE = `${import.meta.dir}/example.ts`;
-const code = await Bun.file(FILE).text();
 
 // loc gives us line numbers, which is off by default in typescript-estree.
-const tree = parse(code, { loc: true, range: true });
 
-const testedVariable : string = "limit"
 
 /*
     the function collectVariables uses a tree 
@@ -28,16 +31,14 @@ const testedVariable : string = "limit"
     given in the param
 */
 
-function getDataFlow(query: unknown) {
+function getDataFlow() {
     /* 
         Pseudocode:
         1. given a query, use collectVariables to get the whole tree
         2. Then use the tree to find the name that matches with query
     */
 
-    const results = collectVariables(tree);
-
-    return JSON.stringify(results.declarations.filter(d => d.name === query), null, 2);
+    return treeResults;
 }
 
-console.log(`${testedVariable}`, getDataFlow(`${testedVariable}`));
+console.log(JSON.stringify(getDataFlow(), null, 2));
