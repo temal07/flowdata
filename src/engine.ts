@@ -7,7 +7,7 @@ export interface Results {
     declarations: Binding[];
 }
 
-const FILE = "example.ts";
+const FILE = `${import.meta.dir}/example.ts`;
 const code = await Bun.file(FILE).text();
 
 // loc gives us line numbers, which is off by default in typescript-estree.

@@ -1,7 +1,17 @@
 import { collectVariables } from "./engine";
 import { parse } from "@typescript-eslint/typescript-estree";
+import { Glob } from "bun";
 
-const FILE = "example.ts";
+// Create a Glob Object
+
+const glob = new Glob("**/*.ts");           // ** = all subfolders, *.ts = TypeScript files
+const projectDir = import.meta.dir;         // the folder you want to analyze
+
+for await (const file of glob.scan(projectDir)) {
+    console.log(file);                       // each .ts file path, one at a time
+}
+
+const FILE = `${import.meta.dir}/example.ts`;
 const code = await Bun.file(FILE).text();
 
 // loc gives us line numbers, which is off by default in typescript-estree.
