@@ -1,17 +1,8 @@
 import { parse } from "@typescript-eslint/typescript-estree";
-import type { Binding, Kind, Scope } from "./types";
-import type { Node } from "typescript";
-
-export interface Results {
-    uses: Binding[];
-    declarations: Binding[];
-}
-
-const FILE = `${import.meta.dir}/example.ts`;
-const code = await Bun.file(FILE).text();
+import type { Binding, Kind, Scope, Results } from "./types";
+import { TSESTree } from "@typescript-eslint/typescript-estree";
 
 // loc gives us line numbers, which is off by default in typescript-estree.
-const tree = parse(code, { loc: true, range: true });
 
 // Define the file
 let currentFile = "";
@@ -37,7 +28,7 @@ function makeBinding(
     };
 }
 
-export function collectVariables(node: any, file: string): Results {
+export function collectVariables(node: TSESTree.Node, file: string): Results {
     currentFile = file;
     const results: Results = { uses: [], declarations: [] };
     // A stack to know which scope we're in, so that 2 or more variables with
@@ -49,7 +40,7 @@ export function collectVariables(node: any, file: string): Results {
     return results;
 }
 
-function walkVariables(node: any, results: Results, stack: Scope[]): void {
+function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): void {
     // 1. null / undefined — skip
     if (node === null || node === undefined) {
         return;
@@ -194,7 +185,7 @@ function walkVariables(node: any, results: Results, stack: Scope[]): void {
 // or a rest element, and these nest inside each other. `kind` is the kind to
 // tag every name found beneath this pattern with; `varType` carries the
 // var/let/const keyword through to each leaf identifier.
-export function collectPatternNames(pattern: any, declarations: Binding[], kind: Kind, varType = "") {
+export function collectPatternNames(pattern: TSESTree.Node | null, declarations: Binding[], kind: Kind, varType = "") {
     if (pattern === null || pattern === undefined) {
         return;
     }

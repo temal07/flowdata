@@ -21,3 +21,8 @@ export type Scope = {
     name: string;
     declarations: Binding[];
 }
+
+export interface Results {
+    uses: Binding[];
+    declarations: Binding[];
+}

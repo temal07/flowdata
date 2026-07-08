@@ -8,7 +8,6 @@ const glob = new Glob("**/*.ts");           // ** = all subfolders, *.ts = TypeS
 const projectDir = import.meta.dir;         // the folder you want to analyze
 
 const testedVariable : string = "limit"
-const FILE = `${import.meta.dir}/example.ts`;
 
 const treeResults = {};
 
