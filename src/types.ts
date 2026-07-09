@@ -4,9 +4,12 @@ export type Kind = "function" |
     "variable" |
     "type" |
     "conditional" |
-    "catch";
+    "catch" |
+    "import" 
+    ;
 
 export interface Binding {
+    source?: string;
     name: string;
     line: number;
     varType: string;
@@ -14,7 +17,14 @@ export interface Binding {
     kind: Kind;
     start: number;
     role: "declaration" | "use";
-    uses: Binding[]
+    uses: Use[];
+}
+
+export interface Use {
+    name: string;
+    file: string;
+    line: number;
+    start: number;
 }
 
 export type Scope = {
@@ -23,6 +33,5 @@ export type Scope = {
 }
 
 export interface Results {
-    uses: Binding[];
     declarations: Binding[];
 }

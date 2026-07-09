@@ -1,6 +1,7 @@
 import { parse } from "@typescript-eslint/typescript-estree";
-import type { Binding, Kind, Scope, Results } from "./types";
+import type { Binding, Kind, Scope, Results, Use } from "./types";
 import { TSESTree } from "@typescript-eslint/typescript-estree";
+import { resolve, dirname } from "path";
 
 // loc gives us line numbers, which is off by default in typescript-estree.
 
@@ -28,9 +29,19 @@ function makeBinding(
     };
 }
 
+// Build a Use from an Identifier-like node.
+function makeUse(idNode: any): Use {
+    return {
+        name: idNode.name,
+        line: idNode.loc?.start.line ?? -1,
+        start: idNode.range?.[0] ?? -1,
+        file: currentFile,
+    };
+}
+
 export function collectVariables(node: TSESTree.Node, file: string): Results {
     currentFile = file;
-    const results: Results = { uses: [], declarations: [] };
+    const results: Results = { declarations: [] };
     // A stack to know which scope we're in, so that 2 or more variables with
     // the same name can be found without ambiguity. Created fresh per call so
     // repeated invocations don't leak declarations/uses from earlier walks.
@@ -66,7 +77,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             const found = stack[i]?.declarations.find(d => d.name === node.name);
             if (found) {
                 if (node.range[0] === found.start) { break; }
-                found.uses.push(makeBinding(node, "use", "variable"))
+                found.uses.push(makeUse(node));
                 break;
             }
         }
@@ -75,7 +86,17 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     // import { parse } from "acorn" — each specifier binds a local name
     if (node.type === "ImportDeclaration") {
         for (const spec of node.specifiers) {
-            results.declarations.push(makeBinding(spec.local, "declaration", "variable"));
+            const binding = makeBinding(spec.local, "declaration", "import");
+            binding.source = node.source.value;
+
+            if (binding.source.startsWith(".")) {
+                const importerDir = dirname(binding.file);
+                const resolved = resolve(importerDir, binding.source) + ".ts";
+                // Reset it to the absolute path, not relative 
+                binding.source = resolved;
+            }
+
+            stack[stack.length - 1]!.declarations.push(binding);
         }
     }
 
