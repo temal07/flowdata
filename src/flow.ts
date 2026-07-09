@@ -47,7 +47,25 @@ for (const fileResults of Object.values(treeResults) as Results[]) {   // each i
     }
 }
 
-console.log(JSON.stringify(treeResults, null, 2));
+// Move the declarations into a flat "nodes" object
+// key: "nodes", values: all declarations from all files
+const graph: { nodes: Binding[] } = { nodes: [] };
+
+for (const fileResults of Object.values(treeResults) as Results[]) {
+    for (const declaration of fileResults.declarations) {
+        // skip every non-declaration (use) role
+        if (declaration.role !== "declaration") continue;
+
+        // skip every node that has imports
+        if (declaration.kind === "import") continue;
+
+        graph.nodes.push(declaration);
+  
+    }
+}
+console.log(JSON.stringify(graph.nodes, null, 2));
+
+// console.log(JSON.stringify(treeResults, null, 2));
 
 // loc gives us line numbers, which is off by default in typescript-estree.
 
