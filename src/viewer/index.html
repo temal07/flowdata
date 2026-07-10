@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>flowdata graph viewer</title>
+<link rel="stylesheet" href="./style.css">
+<script src="./lib/cytoscape.min.js"></script>
+</head>
+<body>
+  <div id="sidebar">
+    <h1>flowdata</h1>
+    <input id="search" type="text" placeholder="Search by name..." autocomplete="off">
+    <div id="search-results"></div>
+
+    <div id="legend"></div>
+
+    <div id="panel">
+      <div id="panel-empty">Select a node to see its details.</div>
+      <div id="panel-content" hidden>
+        <h2 id="panel-name"></h2>
+        <div id="panel-kind" class="kind-badge"></div>
+        <div class="section">
+          <div class="section-label">Declared at</div>
+          <div id="panel-decl" class="loc"></div>
+        </div>
+        <div class="section">
+          <div class="section-label">Uses (<span id="panel-uses-count">0</span>)</div>
+          <ul id="panel-uses"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="cy"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

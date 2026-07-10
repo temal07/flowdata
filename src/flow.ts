@@ -1,33 +1,33 @@
+#!/usr/bin/env bun
 import { collectVariables } from "./engine";
 import { parse } from "@typescript-eslint/typescript-estree";
 import { Glob } from "bun";
 import type { Binding, Results } from "./types";
-import { resolve } from "path"; 
+import { resolve } from "path";
 
-// Create a Glob Object
+const targetArg = Bun.argv[2];
 
-const glob = new Glob("**/*.ts");           // ** = all subfolders, *.ts = TypeScript files
-const projectDir = import.meta.dir;         // the folder you want to analyze
-
-const testedVariable : string = "limit"
-
-// An object to store the tree with a string key 
-// and a Results value
-const treeResults : Record<string, Results> = {};
-
-for await (const file of glob.scan(projectDir)) {
-    const code = await Bun.file(file).text();
-    const tree = parse(code, { loc: true, range: true });
-    const absolutePath = resolve(projectDir, file);
-    (treeResults as Record<string, Results>)[absolutePath] = collectVariables(tree, `${projectDir}/${file}`);   
+if (!targetArg) {
+    console.error("Usage: flow <directory>");
+    process.exit(1);
 }
 
-console.log(Object.keys(treeResults));
+const projectDir = resolve(process.cwd(), targetArg);
+const glob = new Glob("**/*.{ts,tsx,js,jsx,mjs,cjs}");
+
+const treeResults: Record<string, Results> = {};
+
+for await (const file of glob.scan(projectDir)) {
+    const absolutePath = resolve(projectDir, file);
+    const code = await Bun.file(absolutePath).text();
+    const tree = parse(code, { loc: true, range: true });
+    treeResults[absolutePath] = collectVariables(tree, absolutePath);
+}
 
 // for each file, for each import declaration, find the real declaration
 // in the source file and move the uses onto it
-for (const fileResults of Object.values(treeResults) as Results[]) {   // each is a Results object
-    for (const binding of fileResults.declarations) {      // reach into .declarations
+for (const fileResults of Object.values(treeResults)) {
+    for (const binding of fileResults.declarations) {
         // only deal with imports
         if (binding.kind !== "import") continue;
 
@@ -47,11 +47,11 @@ for (const fileResults of Object.values(treeResults) as Results[]) {   // each i
     }
 }
 
-// Move the declarations into a flat "nodes" object
-// key: "nodes", values: all declarations from all files
+// Move the declarations into a flat "nodes" array:
+// every declaration from every file, uses already attached.
 const graph: { nodes: Binding[] } = { nodes: [] };
 
-for (const fileResults of Object.values(treeResults) as Results[]) {
+for (const fileResults of Object.values(treeResults)) {
     for (const declaration of fileResults.declarations) {
         // skip every non-declaration (use) role
         if (declaration.role !== "declaration") continue;
@@ -60,33 +60,57 @@ for (const fileResults of Object.values(treeResults) as Results[]) {
         if (declaration.kind === "import") continue;
 
         graph.nodes.push(declaration);
-  
     }
 }
-console.log(JSON.stringify(graph.nodes, null, 2));
 
-// console.log(JSON.stringify(treeResults, null, 2));
+console.log(`flow: analyzed ${Object.keys(treeResults).length} files, found ${graph.nodes.length} declarations`);
 
-// loc gives us line numbers, which is off by default in typescript-estree.
+const viewerDir = new URL("./viewer/", import.meta.url).pathname;
+const graphJson = JSON.stringify(graph);
 
+const viewerFiles: Record<string, string> = {
+    "/": "index.html",
+    "/index.html": "index.html",
+    "/style.css": "style.css",
+    "/app.js": "app.js",
+    "/lib/cytoscape.min.js": "lib/cytoscape.min.js",
+};
 
-/*
-    the function collectVariables uses a tree 
-    (indicated by the node param) to give ALL 
-    declarations and uses of ALL variables.
+const server = Bun.serve({
+    port: 0,
+    fetch(req) {
+        const { pathname } = new URL(req.url);
 
-    getDataFlow is supposed to do the same, but only for the query
-    given in the param
-*/
+        if (pathname === "/graph.json") {
+            return new Response(graphJson, { headers: { "Content-Type": "application/json" } });
+        }
 
-function getDataFlow() {
-    /* 
-        Pseudocode:
-        1. given a query, use collectVariables to get the whole tree
-        2. Then use the tree to find the name that matches with query
-    */
+        const rel = viewerFiles[pathname];
+        if (rel) {
+            return new Response(Bun.file(viewerDir + rel));
+        }
 
-    return treeResults;
+        return new Response("Not found", { status: 404 });
+    },
+});
+
+console.log(`flow: serving graph viewer at ${server.url}`);
+
+const openCommand = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+Bun.spawn([openCommand, server.url.toString()], { stdout: "ignore", stderr: "ignore" });
+
+console.log("flow: press q + Enter to stop (or Ctrl+C)");
+
+function shutdown() {
+    server.stop();
+    process.exit(0);
 }
 
-//console.log(JSON.stringify(getDataFlow(), null, 2));
+process.stdin.on("data", (data) => {
+    const input = data.toString().trim().toLowerCase();
+    if (input === "q" || input === "quit" || input === "exit") {
+        shutdown();
+    }
+});
+
+process.on("SIGINT", shutdown);

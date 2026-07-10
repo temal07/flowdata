@@ -1,0 +1,1798 @@
+{
+  "nodes": [
+    {
+      "name": "query",
+      "line": 3,
+      "start": 70,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/example.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "query",
+          "line": 4,
+          "start": 137,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/example.ts"
+        }
+      ]
+    },
+    {
+      "name": "limit",
+      "line": 3,
+      "start": 77,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/example.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "limit",
+          "line": 4,
+          "start": 152,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/example.ts"
+        }
+      ]
+    },
+    {
+      "name": "extractQuery",
+      "line": 3,
+      "start": 55,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/example.ts",
+      "kind": "function",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "idNode",
+      "line": 15,
+      "start": 603,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "idNode",
+          "line": 21,
+          "start": 717,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "idNode",
+          "line": 22,
+          "start": 744,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "idNode",
+          "line": 23,
+          "start": 789,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "role",
+      "line": 16,
+      "start": 620,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "role",
+          "line": 27,
+          "start": 880,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "role",
+          "line": 27,
+          "start": 880,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "kind",
+      "line": 17,
+      "start": 647,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "kind",
+          "line": 26,
+          "start": 866,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "kind",
+          "line": 26,
+          "start": 866,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "varType",
+      "line": 18,
+      "start": 663,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "varType",
+          "line": 24,
+          "start": 822,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "varType",
+          "line": 24,
+          "start": 822,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "idNode",
+      "line": 33,
+      "start": 976,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "idNode",
+          "line": 35,
+          "start": 1023,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "idNode",
+          "line": 36,
+          "start": 1050,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "idNode",
+          "line": 37,
+          "start": 1095,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "results",
+      "line": 44,
+      "start": 1270,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "results",
+          "line": 49,
+          "start": 1636,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "results",
+          "line": 50,
+          "start": 1657,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "results",
+          "line": 51,
+          "start": 1739,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "stack",
+      "line": 48,
+      "start": 1555,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "stack",
+          "line": 49,
+          "start": 1645,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 50,
+          "start": 1686,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "node",
+      "line": 42,
+      "start": 1190,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "node",
+          "line": 49,
+          "start": 1630,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "file",
+      "line": 42,
+      "start": 1211,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "file",
+          "line": 43,
+          "start": 1254,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "item",
+      "line": 67,
+      "start": 2137,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "d",
+      "line": 77,
+      "start": 2406,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "d",
+          "line": 77,
+          "start": 2411,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "found",
+      "line": 77,
+      "start": 2370,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "found",
+          "line": 79,
+          "start": 2497,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "found",
+          "line": 80,
+          "start": 2537,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "found",
+          "line": 78,
+          "start": 2450,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "i",
+      "line": 75,
+      "start": 2291,
+      "varType": "let",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "i",
+          "line": 75,
+          "start": 2313,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "i",
+          "line": 75,
+          "start": 2321,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "importerDir",
+      "line": 93,
+      "start": 2986,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "importerDir",
+          "line": 94,
+          "start": 3064,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "resolved",
+      "line": 94,
+      "start": 3045,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "resolved",
+          "line": 96,
+          "start": 3199,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "binding",
+      "line": 89,
+      "start": 2805,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "binding",
+          "line": 90,
+          "start": 2877,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "binding",
+          "line": 93,
+          "start": 3008,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "binding",
+          "line": 94,
+          "start": 3077,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "binding",
+          "line": 96,
+          "start": 3182,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "binding",
+          "line": 92,
+          "start": 2930,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "binding",
+          "line": 99,
+          "start": 3279,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "spec",
+      "line": 88,
+      "start": 2760,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "decl",
+      "line": 108,
+      "start": 3674,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "paramDeclarations",
+      "line": 135,
+      "start": 4835,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "paramDeclarations",
+          "line": 137,
+          "start": 4952,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "paramDeclarations",
+          "line": 141,
+          "start": 5098,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "param",
+      "line": 136,
+      "start": 4889,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "closing",
+      "line": 192,
+      "start": 6790,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "closing",
+          "line": 193,
+          "start": 6863,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "closing",
+      "line": 198,
+      "start": 6974,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "closing",
+          "line": 199,
+          "start": 7047,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "value",
+      "line": 184,
+      "start": 6500,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "node",
+      "line": 54,
+      "start": 1774,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "node",
+          "line": 56,
+          "start": 1879,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 56,
+          "start": 1896,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 61,
+          "start": 2003,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 67,
+          "start": 2145,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 66,
+          "start": 2109,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 77,
+          "start": 2422,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 79,
+          "start": 2479,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 80,
+          "start": 2561,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 74,
+          "start": 2244,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 90,
+          "start": 2894,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 88,
+          "start": 2768,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 87,
+          "start": 2704,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 109,
+          "start": 3794,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 108,
+          "start": 3682,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 107,
+          "start": 3616,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 115,
+          "start": 3978,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 130,
+          "start": 4626,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 129,
+          "start": 4548,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 136,
+          "start": 4898,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 140,
+          "start": 5037,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 123,
+          "start": 4214,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 124,
+          "start": 4261,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 125,
+          "start": 4307,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 145,
+          "start": 5143,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 154,
+          "start": 5425,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 153,
+          "start": 5352,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 153,
+          "start": 5383,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 159,
+          "start": 5617,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 158,
+          "start": 5524,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 158,
+          "start": 5560,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 165,
+          "start": 5885,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 164,
+          "start": 5803,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 174,
+          "start": 6206,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 170,
+          "start": 6018,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 171,
+          "start": 6063,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 172,
+          "start": 6113,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 179,
+          "start": 6376,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 184,
+          "start": 6523,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 189,
+          "start": 6640,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 190,
+          "start": 6687,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 191,
+          "start": 6733,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "node",
+          "line": 197,
+          "start": 6926,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "results",
+      "line": 54,
+      "start": 1795,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "results",
+          "line": 68,
+          "start": 2185,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "results",
+          "line": 154,
+          "start": 5437,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "results",
+          "line": 159,
+          "start": 5579,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "results",
+          "line": 165,
+          "start": 5847,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "results",
+          "line": 174,
+          "start": 6168,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "results",
+          "line": 185,
+          "start": 6561,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "results",
+          "line": 193,
+          "start": 6834,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "results",
+          "line": 199,
+          "start": 7018,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "stack",
+      "line": 54,
+      "start": 1813,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "stack",
+          "line": 68,
+          "start": 2194,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 77,
+          "start": 2378,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 75,
+          "start": 2295,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 99,
+          "start": 3236,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 99,
+          "start": 3242,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 109,
+          "start": 3744,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 109,
+          "start": 3750,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 130,
+          "start": 4571,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 130,
+          "start": 4577,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 139,
+          "start": 5006,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 146,
+          "start": 5185,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 185,
+          "start": 6570,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 192,
+          "start": 6800,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 192,
+          "start": 6806,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 194,
+          "start": 6894,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 198,
+          "start": 6984,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 198,
+          "start": 6990,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "stack",
+          "line": 200,
+          "start": 7078,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "prop",
+      "line": 223,
+      "start": 8031,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "element",
+      "line": 234,
+      "start": 8412,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "pattern",
+      "line": 209,
+      "start": 7499,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "pattern",
+          "line": 210,
+          "start": 7591,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "pattern",
+          "line": 210,
+          "start": 7611,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "pattern",
+          "line": 217,
+          "start": 7769,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "pattern",
+          "line": 223,
+          "start": 8039,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "pattern",
+          "line": 234,
+          "start": 8423,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "pattern",
+          "line": 241,
+          "start": 8690,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "pattern",
+          "line": 246,
+          "start": 8833,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "pattern",
+          "line": 214,
+          "start": 7671,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "declarations",
+      "line": 209,
+      "start": 7530,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "declarations",
+          "line": 217,
+          "start": 7739,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "declarations",
+          "line": 227,
+          "start": 8262,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "declarations",
+          "line": 225,
+          "start": 8161,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "declarations",
+          "line": 235,
+          "start": 8488,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "declarations",
+          "line": 241,
+          "start": 8704,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "declarations",
+          "line": 246,
+          "start": 8851,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "kind",
+      "line": 209,
+      "start": 7555,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "kind",
+          "line": 217,
+          "start": 7793,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "kind",
+          "line": 227,
+          "start": 8276,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "kind",
+          "line": 225,
+          "start": 8175,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "kind",
+          "line": 235,
+          "start": 8502,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "kind",
+          "line": 241,
+          "start": 8718,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "kind",
+          "line": 246,
+          "start": 8865,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "varType",
+      "line": 209,
+      "start": 7567,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "varType",
+          "line": 217,
+          "start": 7799,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "varType",
+          "line": 227,
+          "start": 8282,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "varType",
+          "line": 225,
+          "start": 8181,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "varType",
+          "line": 235,
+          "start": 8508,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "varType",
+          "line": 241,
+          "start": 8724,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "varType",
+          "line": 246,
+          "start": 8871,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "currentFile",
+      "line": 9,
+      "start": 336,
+      "varType": "let",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "currentFile",
+          "line": 25,
+          "start": 845,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "currentFile",
+          "line": 38,
+          "start": 1134,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "currentFile",
+          "line": 43,
+          "start": 1240,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "makeBinding",
+      "line": 14,
+      "start": 586,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "function",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "makeBinding",
+          "line": 89,
+          "start": 2815,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "makeBinding",
+          "line": 130,
+          "start": 4614,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "makeBinding",
+          "line": 159,
+          "start": 5605,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "makeBinding",
+          "line": 165,
+          "start": 5873,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "makeBinding",
+          "line": 174,
+          "start": 6194,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "makeBinding",
+          "line": 217,
+          "start": 7757,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "makeUse",
+      "line": 33,
+      "start": 968,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "function",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "makeUse",
+          "line": 80,
+          "start": 2553,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "collectVariables",
+      "line": 42,
+      "start": 1173,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "function",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "collectVariables",
+          "line": 22,
+          "start": 846,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "walkVariables",
+      "line": 54,
+      "start": 1760,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "function",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "walkVariables",
+          "line": 68,
+          "start": 2165,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "walkVariables",
+          "line": 185,
+          "start": 6540,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "collectPatternNames",
+      "line": 209,
+      "start": 7479,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts",
+      "kind": "function",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "collectPatternNames",
+          "line": 227,
+          "start": 8236,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "collectPatternNames",
+          "line": 225,
+          "start": 8129,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "collectPatternNames",
+          "line": 235,
+          "start": 8459,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "collectPatternNames",
+          "line": 241,
+          "start": 8670,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        },
+        {
+          "name": "collectPatternNames",
+          "line": 246,
+          "start": 8813,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/engine.ts"
+        }
+      ]
+    },
+    {
+      "name": "Kind",
+      "line": 1,
+      "start": 12,
+      "varType": "",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/types.ts",
+      "kind": "type",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "Binding",
+      "line": 11,
+      "start": 162,
+      "varType": "",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/types.ts",
+      "kind": "type",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "Use",
+      "line": 23,
+      "start": 373,
+      "varType": "",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/types.ts",
+      "kind": "type",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "Scope",
+      "line": 30,
+      "start": 467,
+      "varType": "",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/types.ts",
+      "kind": "type",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "Results",
+      "line": 35,
+      "start": 544,
+      "varType": "",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/types.ts",
+      "kind": "type",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "Results",
+          "line": 22,
+          "start": 820,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "Results",
+          "line": 29,
+          "start": 1118,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "Results",
+          "line": 54,
+          "start": 2072,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "code",
+      "line": 19,
+      "start": 639,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "code",
+          "line": 20,
+          "start": 698,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "tree",
+      "line": 20,
+      "start": 685,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "tree",
+          "line": 22,
+          "start": 863,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "absolutePath",
+      "line": 21,
+      "start": 743,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "absolutePath",
+          "line": 22,
+          "start": 830,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "param",
+      "line": 42,
+      "start": 1694,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "param",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "param",
+          "line": 42,
+          "start": 1703,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "param",
+          "line": 42,
+          "start": 1734,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "sourceResults",
+      "line": 35,
+      "start": 1389,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "sourceResults",
+          "line": 39,
+          "start": 1585,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "sourceResults",
+          "line": 41,
+          "start": 1649,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "realDec",
+      "line": 41,
+      "start": 1639,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "realDec",
+          "line": 45,
+          "start": 1783,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "realDec",
+          "line": 46,
+          "start": 1810,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "binding",
+      "line": 30,
+      "start": 1176,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "declaration",
+      "line": 55,
+      "start": 2100,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "glob",
+      "line": 9,
+      "start": 249,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "glob",
+          "line": 18,
+          "start": 604,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "projectDir",
+      "line": 10,
+      "start": 341,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "projectDir",
+          "line": 21,
+          "start": 766,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "projectDir",
+          "line": 22,
+          "start": 872,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "projectDir",
+          "line": 18,
+          "start": 614,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "testedVariable",
+      "line": 12,
+      "start": 420,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "treeResults",
+      "line": 16,
+      "start": 534,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "treeResults",
+          "line": 22,
+          "start": 790,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "treeResults",
+          "line": 25,
+          "start": 925,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "treeResults",
+          "line": 35,
+          "start": 1405,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "treeResults",
+          "line": 29,
+          "start": 1102,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "treeResults",
+          "line": 54,
+          "start": 2056,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "treeResults",
+          "line": 92,
+          "start": 3186,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "file",
+      "line": 18,
+      "start": 596,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "fileResults",
+      "line": 29,
+      "start": 1073,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "fileResults",
+          "line": 55,
+          "start": 2115,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "fileResults",
+          "line": 54,
+          "start": 2027,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "graph",
+      "line": 52,
+      "start": 1970,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "graph",
+          "line": 62,
+          "start": 2357,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "graph",
+          "line": 66,
+          "start": 2426,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        },
+        {
+          "name": "graph",
+          "line": 69,
+          "start": 2587,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts"
+        }
+      ]
+    },
+    {
+      "name": "fileResults",
+      "line": 54,
+      "start": 2027,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "getDataFlow",
+      "line": 85,
+      "start": 2984,
+      "varType": "N/A",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/flow.ts",
+      "kind": "function",
+      "role": "declaration",
+      "uses": []
+    },
+    {
+      "name": "FILE",
+      "line": 5,
+      "start": 166,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/tree.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "FILE",
+          "line": 6,
+          "start": 234,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/tree.ts"
+        }
+      ]
+    },
+    {
+      "name": "code",
+      "line": 6,
+      "start": 212,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/tree.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "code",
+          "line": 8,
+          "start": 268,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/tree.ts"
+        }
+      ]
+    },
+    {
+      "name": "tree",
+      "line": 8,
+      "start": 255,
+      "varType": "const",
+      "file": "/Users/temiralimov/Desktop/flowdata/src/tree.ts",
+      "kind": "variable",
+      "role": "declaration",
+      "uses": [
+        {
+          "name": "tree",
+          "line": 9,
+          "start": 317,
+          "file": "/Users/temiralimov/Desktop/flowdata/src/tree.ts"
+        }
+      ]
+    }
+  ]
+}
