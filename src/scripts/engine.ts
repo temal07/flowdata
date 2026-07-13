@@ -8,6 +8,9 @@ import { resolve, dirname } from "path";
 // Define the file
 let currentFile = "";
 
+// Define the variable that is fed
+let currentFeedTarget : Binding | undefined = undefined;
+
 // Build a Binding from an Identifier-like node (something with a `.name`).
 // varType is the declaration keyword (var/let/const) for variables, and ""
 // for binding kinds where it doesn't apply (params, functions, ...).
@@ -32,7 +35,7 @@ function makeBinding(
 // Build a Use from an Identifier-like node.
 function makeUse(idNode: any): Use {
     return {
-        name: idNode.name,
+        name: idNode.name || idNode.value,
         line: idNode.loc?.start.line ?? -1,
         start: idNode.range?.[0] ?? -1,
         file: currentFile,
@@ -77,7 +80,17 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             const found = stack[i]?.declarations.find(d => d.name === node.name);
             if (found) {
                 if (node.range[0] === found.start) { break; }
-                found.uses.push(makeUse(node));
+                const use = makeUse(node);
+                if (currentFeedTarget) {
+                    use.feeds = { 
+                        name: currentFeedTarget.name, 
+                        file: currentFeedTarget.file,
+                        line: currentFeedTarget.line,
+                        start: currentFeedTarget.start,
+                    };
+                }
+                // push the use that got stamped
+                found.uses.push(use);
                 break;
             }
         }
@@ -108,6 +121,23 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         for (const decl of node.declarations) {
             collectPatternNames(decl.id, stack[stack.length -1]!.declarations, "variable", node.kind);
         }
+    }
+
+    // Handle node.init separately in VariableDeclarator 
+    // to stamp the feeds prop
+    if (node.type === "VariableDeclarator") {
+        const scopeDeclarations = stack[stack.length - 1]!.declarations;
+        const target = scopeDeclarations[scopeDeclarations.length - 1];
+
+        const previous = currentFeedTarget;   // save
+        currentFeedTarget = target;           // set
+
+        if (node.init) {                      // only if there's an init to walk
+            walkVariables(node.init, results, stack); // walk — uses inside get stamped
+        }
+
+        currentFeedTarget = previous;         // restore
+        return;   
     }
 
     // A bare expression statement — e.g. `rank(query)` — references variables
