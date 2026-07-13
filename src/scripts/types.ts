@@ -25,7 +25,7 @@ export interface Use {
     file: string;
     line: number;
     start: number;
-    feeds?: { file: string; start: number; };
+    feeds?: { name: string; file: string; line: number; start: number; };
 }
 
 export type Scope = {

@@ -79,12 +79,18 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             // A found 
             const found = stack[i]?.declarations.find(d => d.name === node.name);
             if (found) {
-                const use = makeUse(node);
                 if (node.range[0] === found.start) { break; }
+                const use = makeUse(node);
                 if (currentFeedTarget) {
-                    use.feeds = { file: currentFeedTarget.file, start: currentFeedTarget.start };
+                    use.feeds = { 
+                        name: currentFeedTarget.name, 
+                        file: currentFeedTarget.file,
+                        line: currentFeedTarget.line,
+                        start: currentFeedTarget.start,
+                    };
                 }
-                found.uses.push(makeUse(node));
+                // push the use that got stamped
+                found.uses.push(use);
                 break;
             }
         }
@@ -114,15 +120,24 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     if (node.type === "VariableDeclaration") {
         for (const decl of node.declarations) {
             collectPatternNames(decl.id, stack[stack.length -1]!.declarations, "variable", node.kind);
-
-            // Grab the last stack and access its declarations list (Binding[])
-            const scopeDeclarations = stack[stack.length - 1]!.declarations;
-            // Access the last element of that declarations list grabbed above
-            const target = scopeDeclarations[scopeDeclarations.length - 1];
-
-            currentFeedTarget = target;
-
         }
+    }
+
+    // Handle node.init separately in VariableDeclarator 
+    // to stamp the feeds prop
+    if (node.type === "VariableDeclarator") {
+        const scopeDeclarations = stack[stack.length - 1]!.declarations;
+        const target = scopeDeclarations[scopeDeclarations.length - 1];
+
+        const previous = currentFeedTarget;   // save
+        currentFeedTarget = target;           // set
+
+        if (node.init) {                      // only if there's an init to walk
+            walkVariables(node.init, results, stack); // walk — uses inside get stamped
+        }
+
+        currentFeedTarget = previous;         // restore
+        return;   
     }
 
     // A bare expression statement — e.g. `rank(query)` — references variables
