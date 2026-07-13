@@ -8,6 +8,9 @@ import { resolve, dirname } from "path";
 // Define the file
 let currentFile = "";
 
+// Define the variable that is fed
+let currentFeedTarget : Binding | undefined = undefined;
+
 // Build a Binding from an Identifier-like node (something with a `.name`).
 // varType is the declaration keyword (var/let/const) for variables, and ""
 // for binding kinds where it doesn't apply (params, functions, ...).
@@ -32,7 +35,7 @@ function makeBinding(
 // Build a Use from an Identifier-like node.
 function makeUse(idNode: any): Use {
     return {
-        name: idNode.name,
+        name: idNode.name || idNode.value,
         line: idNode.loc?.start.line ?? -1,
         start: idNode.range?.[0] ?? -1,
         file: currentFile,
@@ -76,7 +79,11 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             // A found 
             const found = stack[i]?.declarations.find(d => d.name === node.name);
             if (found) {
+                const use = makeUse(node);
                 if (node.range[0] === found.start) { break; }
+                if (currentFeedTarget) {
+                    use.feeds = { file: currentFeedTarget.file, start: currentFeedTarget.start };
+                }
                 found.uses.push(makeUse(node));
                 break;
             }
@@ -107,6 +114,14 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     if (node.type === "VariableDeclaration") {
         for (const decl of node.declarations) {
             collectPatternNames(decl.id, stack[stack.length -1]!.declarations, "variable", node.kind);
+
+            // Grab the last stack and access its declarations list (Binding[])
+            const scopeDeclarations = stack[stack.length - 1]!.declarations;
+            // Access the last element of that declarations list grabbed above
+            const target = scopeDeclarations[scopeDeclarations.length - 1];
+
+            currentFeedTarget = target;
+
         }
     }
 
