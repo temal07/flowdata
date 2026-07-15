@@ -119,7 +119,11 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     // the init is where uses live, so harvest those as "use" bindings.
     if (node.type === "VariableDeclaration") {
         for (const decl of node.declarations) {
-            collectPatternNames(decl.id, stack[stack.length -1]!.declarations, "variable", node.kind);
+            // Prevent the classification of all "id" fields
+            // as variables
+            const initType = decl.init?.type;
+            const isFunction = initType === "ArrowFunctionExpression" || initType === "FunctionExpression";
+            collectPatternNames(decl.id, stack[stack.length-1]!.declarations, isFunction ? "function" : "variable", node.kind);
         }
     }
 

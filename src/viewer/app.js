@@ -21,6 +21,10 @@ async function main() {
   const res = await fetch("/graph.json");
   const data = await res.json();
   const nodes = data.nodes;
+  const edges = data.edges || [];
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+
+  document.getElementById("viewing").textContent = `Viewing "${shortFile(data.root)}"`;
 
   const kindsPresent = new Set(nodes.map((n) => n.kind));
   buildLegend(kindsPresent);
@@ -50,6 +54,26 @@ async function main() {
           "border-color": "#222",
         },
       },
+      {
+        selector: "edge",
+        style: {
+          width: 1.5,
+          "line-color": "#bbb",
+          "target-arrow-color": "#bbb",
+          "target-arrow-shape": "triangle",
+          "curve-style": "bezier",
+          opacity: 0.8,
+        },
+      },
+      {
+        selector: "edge:selected",
+        style: {
+          width: 3,
+          "line-color": "#6b8afd",
+          "target-arrow-color": "#6b8afd",
+          opacity: 1,
+        },
+      },
     ],
     layout: { name: "grid" },
     wheelSensitivity: 0.25,
@@ -61,11 +85,24 @@ async function main() {
 
     if (matches.length === 0) return;
 
+    const shownIds = new Set(matches.map(({ n }) => n.id));
+
     cy.add(
-      matches.map(({ n, i }) => ({
-        data: { id: String(i), label: n.name, kind: n.kind, node: n },
+      matches.map(({ n }) => ({
+        data: { id: n.id, label: n.name, kind: n.kind, node: n },
       })),
     );
+
+    // only draw feeds edges where both the owning and fed declaration
+    // are currently on screen
+    cy.add(
+      edges
+        .filter((e) => shownIds.has(e.source) && shownIds.has(e.target))
+        .map((e, i) => ({
+          data: { id: `e${i}`, source: e.source, target: e.target, occurrences: e.occurrences || [] },
+        })),
+    );
+
     cy.layout({
       name: "grid",
       padding: 40,
@@ -81,8 +118,18 @@ async function main() {
     showPanel(cyNode.data("node"));
   }
 
+  function selectEdge(cyEdge) {
+    cy.elements(":selected").unselect();
+    cyEdge.select();
+    showEdgePanel(cyEdge.data());
+  }
+
   cy.on("tap", "node", (evt) => {
     selectNode(evt.target);
+  });
+
+  cy.on("tap", "edge", (evt) => {
+    selectEdge(evt.target);
   });
 
   cy.on("tap", (evt) => {
@@ -105,17 +152,17 @@ async function main() {
     }
 
     const matches = nodes
-      .map((n, i) => ({ n, i }))
+      .map((n) => ({ n }))
       .filter(({ n }) => n.name.toLowerCase().includes(q));
 
     renderMatches(matches);
 
-    for (const { n, i } of matches.slice(0, 30)) {
+    for (const { n } of matches.slice(0, 30)) {
       const row = document.createElement("div");
       row.className = "search-result";
       row.innerHTML = `<span class="name">${escapeHtml(n.name)}</span><span class="kind">${escapeHtml(n.kind)}</span>`;
       row.addEventListener("click", () => {
-        const cyNode = cy.getElementById(String(i));
+        const cyNode = cy.getElementById(n.id);
         selectNode(cyNode);
       });
       searchResults.appendChild(row);
@@ -124,6 +171,7 @@ async function main() {
 
   function showPanel(n) {
     document.getElementById("panel-empty").hidden = true;
+    document.getElementById("panel-edge-content").hidden = true;
     const content = document.getElementById("panel-content");
     content.hidden = false;
 
@@ -153,9 +201,42 @@ async function main() {
     }
   }
 
+  function showEdgePanel(edge) {
+    document.getElementById("panel-empty").hidden = true;
+    document.getElementById("panel-content").hidden = true;
+    const content = document.getElementById("panel-edge-content");
+    content.hidden = false;
+
+    const source = nodeById.get(edge.source);
+    const target = nodeById.get(edge.target);
+    document.getElementById("panel-edge-title").textContent =
+      `${source?.name ?? "?"} → ${target?.name ?? "?"}`;
+
+    const list = document.getElementById("panel-edge-uses");
+    list.innerHTML = "";
+    const occurrences = edge.occurrences || [];
+
+    if (occurrences.length === 0) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "No recorded use sites.";
+      list.appendChild(li);
+    } else {
+      for (const occ of occurrences) {
+        const li = document.createElement("li");
+        li.className = "code-occurrence";
+        li.innerHTML =
+          `<div class="loc">${escapeHtml(shortFile(occ.file))}:${occ.line}</div>` +
+          `<code>${escapeHtml(occ.code)}</code>`;
+        list.appendChild(li);
+      }
+    }
+  }
+
   function hidePanel() {
     document.getElementById("panel-empty").hidden = false;
     document.getElementById("panel-content").hidden = true;
+    document.getElementById("panel-edge-content").hidden = true;
   }
 }
 

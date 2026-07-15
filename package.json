@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "bin": {
-    "flow": "./src/flow.ts"
+    "flow": "./src/scripts/flow.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

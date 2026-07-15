@@ -9,6 +9,7 @@
 <body>
   <div id="sidebar">
     <h1>flowdata</h1>
+    <div id="viewing"></div>
     <input id="search" type="text" placeholder="Search by name..." autocomplete="off">
     <div id="search-results"></div>
 
@@ -26,6 +27,13 @@
         <div class="section">
           <div class="section-label">Uses (<span id="panel-uses-count">0</span>)</div>
           <ul id="panel-uses"></ul>
+        </div>
+      </div>
+      <div id="panel-edge-content" hidden>
+        <h2 id="panel-edge-title"></h2>
+        <div class="section">
+          <div class="section-label">Used in</div>
+          <ul id="panel-edge-uses"></ul>
         </div>
       </div>
     </div>

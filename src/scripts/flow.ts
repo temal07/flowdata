@@ -16,12 +16,20 @@ const projectDir = resolve(process.cwd(), targetArg);
 const glob = new Glob("**/*.{ts,tsx,js,jsx,mjs,cjs}");
 
 const treeResults: Record<string, Results> = {};
+// keep each file's source around so edge clicks can show the actual code
+// at the use site, not just a file:line reference.
+const fileTexts: Record<string, string> = {};
 
 for await (const file of glob.scan(projectDir)) {
     const absolutePath = resolve(projectDir, file);
     const code = await Bun.file(absolutePath).text();
     const tree = parse(code, { loc: true, range: true });
     treeResults[absolutePath] = collectVariables(tree, absolutePath);
+    fileTexts[absolutePath] = code;
+}
+
+function codeAt(file: string, line: number): string {
+    return fileTexts[file]?.split("\n")[line - 1]?.trim() ?? "";
 }
 
 // for each file, for each import declaration, find the real declaration
@@ -47,9 +55,18 @@ for (const fileResults of Object.values(treeResults)) {
     }
 }
 
+// A declaration's file+start is unique, so it doubles as a stable node id
+// for edges (feeds targets are stamped with the same file+start).
+function nodeId(file: string, start: number): string {
+    return `${file}:${start}`;
+}
+
 // Move the declarations into a flat "nodes" array:
 // every declaration from every file, uses already attached.
-const graph: { nodes: Binding[] } = { nodes: [] };
+type GraphNode = Binding & { id: string };
+type Occurrence = { file: string; line: number; code: string };
+type GraphEdge = { source: string; target: string; occurrences: Occurrence[] };
+const graph: { root: string; nodes: GraphNode[]; edges: GraphEdge[] } = { root: projectDir, nodes: [], edges: [] };
 
 for (const fileResults of Object.values(treeResults)) {
     for (const declaration of fileResults.declarations) {
@@ -59,13 +76,38 @@ for (const fileResults of Object.values(treeResults)) {
         // skip every node that has imports
         if (declaration.kind === "import") continue;
 
-        graph.nodes.push(declaration);
+        graph.nodes.push({ ...declaration, id: nodeId(declaration.file, declaration.start) });
     }
 }
 
-console.log(`flow: analyzed ${Object.keys(treeResults).length} files, found ${graph.nodes.length} declarations`);
+// Read the feeds stamped on each use: the use's owning declaration is the
+// thing being used, and use.feeds names the declaration that use flows into.
+// Draw an edge owning declaration -> fed declaration for each one, keeping
+// every use site that contributed to it so clicking the edge can show the code.
+const nodeIds = new Set(graph.nodes.map((n) => n.id));
+const edgesByKey = new Map<string, GraphEdge>();
+for (const node of graph.nodes) {
+    for (const use of node.uses) {
+        if (!use.feeds) continue;
+        const target = nodeId(use.feeds.file, use.feeds.start);
+        // the fed declaration may have been filtered out (e.g. an import);
+        // only keep edges where both ends are real graph nodes.
+        if (!nodeIds.has(target)) continue;
 
-const viewerDir = new URL("./viewer/", import.meta.url).pathname;
+        const key = `${node.id}->${target}`;
+        let edge = edgesByKey.get(key);
+        if (!edge) {
+            edge = { source: node.id, target, occurrences: [] };
+            edgesByKey.set(key, edge);
+        }
+        edge.occurrences.push({ file: use.file, line: use.line, code: codeAt(use.file, use.line) });
+    }
+}
+graph.edges.push(...edgesByKey.values());
+
+console.log(`flow: analyzed ${Object.keys(treeResults).length} files, found ${graph.nodes.length} declarations, ${graph.edges.length} feeds edges`);
+
+const viewerDir = new URL("../viewer/", import.meta.url).pathname;
 const graphJson = JSON.stringify(graph);
 
 const viewerFiles: Record<string, string> = {

@@ -1,8 +1,5 @@
-function foo() {
-    return;
-}
-const a = 1, b = foo();
-
-let x = 5;
-let y = 2;
-const c = x + y;
+// Builds a TF-IDF vector: term frequency weighted by the supplied idf. Terms
+// absent from the corpus fall back to a neutral weight of 1.
+export const vectoriseTfIdf = (tokens:string)=> {
+    return "Hello";
+};
