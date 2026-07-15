@@ -71,5 +71,5 @@ export async function analyzeProject(projectDir: string) {
     };
 }
 
-// console.log(JSON.stringify(await analyzeProject("./"), null, 2));
-console.log(JSON.stringify(await analyzeProject("../../../../Desktop/resurface/src/utils"), null, 2));
+console.log(JSON.stringify(await analyzeProject("./"), null, 2));
+// console.log(JSON.stringify(await analyzeProject("../../../../Desktop/resurface/src/utils"), null, 2));

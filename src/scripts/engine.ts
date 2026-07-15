@@ -9,7 +9,7 @@ import { resolve, dirname } from "path";
 let currentFile = "";
 
 // Define the variable that is fed
-let currentFeedTarget : Binding | undefined = undefined;
+let currentFeedTarget : Binding | null = null;
 
 // Build a Binding from an Identifier-like node (something with a `.name`).
 // varType is the declaration keyword (var/let/const) for variables, and ""
@@ -48,7 +48,7 @@ export function collectVariables(node: TSESTree.Node, file: string): Results {
     // A stack to know which scope we're in, so that 2 or more variables with
     // the same name can be found without ambiguity. Created fresh per call so
     // repeated invocations don't leak declarations/uses from earlier walks.
-    const stack: Scope[] = [{ name: "global", declarations: [] }];
+    const stack: Scope[] = [{ name: "global", declarations: [], savedFeedTarget: null }];
     walkVariables(node, results, stack);
     results.declarations.push(...stack[0]!.declarations);   // save global
     return results;
@@ -131,7 +131,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     // to stamp the feeds prop
     if (node.type === "VariableDeclarator") {
         const scopeDeclarations = stack[stack.length - 1]!.declarations;
-        const target = scopeDeclarations[scopeDeclarations.length - 1];
+        const target = scopeDeclarations[scopeDeclarations.length - 1] ?? null;
 
         const previous = currentFeedTarget;   // save
         currentFeedTarget = target;           // set
@@ -172,14 +172,17 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         }
         stack.push({
             name: node.id?.name ?? "anonymous_func",
-            declarations: paramDeclarations
+            declarations: paramDeclarations,
+            savedFeedTarget: currentFeedTarget as Binding,
         });
+        currentFeedTarget = null;
     }
 
     if (node.type === "BlockStatement") {
         stack.push({
             name: "block",
             declarations: [],
+            savedFeedTarget: currentFeedTarget as Binding,
         })
     }
 
@@ -224,12 +227,14 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         node.type === "FunctionExpression" ||
         node.type === "ArrowFunctionExpression") {
         const closing = stack[stack.length - 1]!;
+        currentFeedTarget = closing.savedFeedTarget;
         results.declarations.push(...closing.declarations);
         stack.pop();
     }
     
     if (node.type === "BlockStatement") {
         const closing = stack[stack.length - 1]!;
+        currentFeedTarget = closing.savedFeedTarget;
         results.declarations.push(...closing.declarations);
         stack.pop();
     }

@@ -31,6 +31,7 @@ export interface Use {
 export type Scope = {
     name: string;
     declarations: Binding[];
+    savedFeedTarget: Binding | null;
 }
 
 export interface Results {
