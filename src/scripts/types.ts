@@ -6,7 +6,8 @@ export type Kind = "function" |
     "conditional" |
     "catch" |
     "import" 
-    ;
+;
+
 
 export interface Binding {
     source?: string;
@@ -15,6 +16,7 @@ export interface Binding {
     varType: string;
     file: string;
     kind: Kind;
+    params?: {name: string, file: string}[];
     start: number;
     role: "declaration" | "use";
     uses: Use[];

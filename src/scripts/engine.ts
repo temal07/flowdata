@@ -158,10 +158,15 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         node.type === "FunctionExpression" ||
         node.type === "ArrowFunctionExpression"
     ) {
+        // store the binding in a variable to later attach it to the param field 
+        // of the Binding type.
+        let funcBinding;
+
         // 1. Put the function's name in the CURRENT scope (before pushing the new one)
         // This adds to the DECLARATIONS array that is one of stack's keys which is an array
         if (node.id) {
-            stack[stack.length - 1]!.declarations.push(makeBinding(node.id, "declaration", "function", "N/A"));
+            funcBinding = makeBinding(node.id, "declaration", "function", "N/A");
+            stack[stack.length - 1]!.declarations.push(funcBinding);
         }
     
         // 2. Build the params, then push the function's own new scope
@@ -170,10 +175,14 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         for (const param of node.params) {
             collectPatternNames(param, paramDeclarations, "param", "N/A");
         }
+        
+        if (funcBinding) {
+            funcBinding.params = paramDeclarations.map((p) => ({ name: p.name, file: p.file }));
+        }
         stack.push({
             name: node.id?.name ?? "anonymous_func",
             declarations: paramDeclarations,
-            savedFeedTarget: currentFeedTarget as Binding,
+            savedFeedTarget: currentFeedTarget,
         });
         currentFeedTarget = null;
     }
@@ -182,7 +191,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         stack.push({
             name: "block",
             declarations: [],
-            savedFeedTarget: currentFeedTarget as Binding,
+            savedFeedTarget: currentFeedTarget,
         })
     }
 
