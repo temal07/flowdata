@@ -167,6 +167,12 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         if (node.id) {
             funcBinding = makeBinding(node.id, "declaration", "function", "N/A");
             stack[stack.length - 1]!.declarations.push(funcBinding);
+        } else {
+            // If there is no node.id (anonymous function), check if currentFeedTarget is available
+            // and treat it as the function binding to which to attach params later.
+            if (currentFeedTarget && (currentFeedTarget.kind === "function")) {
+                funcBinding = currentFeedTarget;
+            }
         }
     
         // 2. Build the params, then push the function's own new scope
@@ -177,7 +183,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         }
         
         if (funcBinding) {
-            funcBinding.params = paramDeclarations.map((p) => ({ name: p.name, file: p.file }));
+            funcBinding.params = paramDeclarations;
         }
         stack.push({
             name: node.id?.name ?? "anonymous_func",
@@ -185,6 +191,10 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             savedFeedTarget: currentFeedTarget,
         });
         currentFeedTarget = null;
+    }
+
+    if (node.type === "CallExpression") {
+        
     }
 
     if (node.type === "BlockStatement") {
