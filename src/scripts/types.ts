@@ -16,7 +16,7 @@ export interface Binding {
     varType: string;
     file: string;
     kind: Kind;
-    params?: {name: string, file: string, start: number, line: number}[];
+    params?: Binding[];
     start: number;
     role: "declaration" | "use";
     uses: Use[];

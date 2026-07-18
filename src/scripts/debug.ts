@@ -13,6 +13,9 @@ import { resolve } from "path";
 
 // You can now import and use the core logic below programmatically.
 
+// the directory the debug.ts is gonna work in.
+const dirToAnalyse : string = "../tests";
+
 export async function analyzeProject(projectDir: string) {
     const glob = new Glob("**/*.{ts,tsx,js,jsx,mjs,cjs}");
 
@@ -71,5 +74,5 @@ export async function analyzeProject(projectDir: string) {
     };
 }
 
-console.log(JSON.stringify(await analyzeProject("./"), null, 2));
+console.log(JSON.stringify(await analyzeProject(dirToAnalyse), null, 2));
 // console.log(JSON.stringify(await analyzeProject("../../../../Desktop/resurface/src/utils"), null, 2));

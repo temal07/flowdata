@@ -2,7 +2,7 @@
 import { parse } from "@typescript-eslint/typescript-estree";
 import { collectVariables } from "./engine";
 
-const FILE = `${import.meta.dir}/example.ts`;
+const FILE = `${import.meta.dir}/../tests/example.ts`;
 const code = await Bun.file(FILE).text();
 
 const tree = parse(code, { loc: true });

@@ -193,8 +193,59 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         currentFeedTarget = null;
     }
 
+    // Arguments need to feed the parameters, i.e., 
+    // args and params must match 
+
+    // End result we're trying to achieve: 
+
+    /*
+        "params": [
+            {
+              "name": "p",
+              "line": 1,
+              "start": 13,
+              "varType": "N/A",
+              "file": "/Users/temiralimov/Desktop/flowdata/src/tests/example.ts",
+              "kind": "param",
+              "role": "declaration",
+              "uses": [
+                {
+                  "name": "p",
+                  "line": 1,
+                  "start": 34,
+                  "file": "/Users/temiralimov/Desktop/flowdata/src/tests/example.ts"
+   NEW PROP ----> "feeds": {
+                    "name": ARG name
+                    ... rest of arg's properties
+                  }       
+                }
+              ]
+            }
+          ]
+    */
+
     if (node.type === "CallExpression") {
-        
+        if (node.callee.type === "Identifier") {
+            const calleeName = node.callee.name;
+            let calledFunc : Binding | undefined;
+            for (let i = stack.length - 1; i >= 0; i--) {
+                // the function that is called:
+                calledFunc = stack[i]?.declarations.find((d : Binding) => d.name === calleeName);
+                if (calledFunc) break;
+            }
+
+            let save;
+            for (let argIndex = 0; argIndex < node.arguments.length; argIndex++) {
+                save = currentFeedTarget;
+                currentFeedTarget = calledFunc?.params?.[argIndex] ?? null;
+                const arg = node.arguments[argIndex];
+                if (arg) walkVariables(arg, results, stack);   // guard: fewer args than params
+                currentFeedTarget = save;
+            }
+      
+            walkVariables(node.callee, results, stack);
+            return; 
+        }
     }
 
     if (node.type === "BlockStatement") {
