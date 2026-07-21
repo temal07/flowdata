@@ -1,7 +1,17 @@
-// A copy of flow.ts but for debugging purposes
-// will not interfere with the main branch.
-
-// Exists only for branches where I am working on a new version
+/**
+ * debug.ts — programmatic, no-CLI mirror of flow.ts for local iteration.
+ *
+ * A copy of flow.ts's parse-and-link pipeline (steps 1-3: walk every file,
+ * resolve imports onto their real declaration, flatten into a node list)
+ * with everything CLI/server-shaped stripped out — no argv parsing, no
+ * feeds-edge construction, no viewer, no `process.exit`/browser-open/
+ * shutdown-on-keypress. Exists so a new engine.ts feature can be exercised
+ * against `../tests` (or any directory, via `analyzeProject`) with a plain
+ * `bun run` and a JSON dump, without spinning up the graph viewer.
+ *
+ * Kept deliberately out of the `flow` CLI's path (see `bin` in
+ * package.json) so changes here can't affect the shipped command.
+ */
 
 import { collectVariables } from "./engine";
 import { parse } from "@typescript-eslint/typescript-estree";
@@ -9,13 +19,16 @@ import { Glob } from "bun";
 import type { Binding, Results } from "./types";
 import { resolve } from "path";
 
-// CLI setup removed: variable parsing, usage, process.exit, open browser, shutdown on keypress, etc.
-
-// You can now import and use the core logic below programmatically.
-
 // the directory the debug.ts is gonna work in.
 const dirToAnalyse : string = "../tests";
 
+/**
+ * Walk every source file under `projectDir`, resolve imports to their real
+ * declarations, and flatten the result into a node list.
+ *
+ * Same first three steps as flow.ts's top-level pipeline, minus the
+ * feeds-edge / viewer / CLI machinery — see the module doc above.
+ */
 export async function analyzeProject(projectDir: string) {
     const glob = new Glob("**/*.{ts,tsx,js,jsx,mjs,cjs}");
 

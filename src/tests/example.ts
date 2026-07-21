@@ -1,3 +1,10 @@
-function foo(p : number) { return p; }
-const z = 1;
+function foo(p : any) {
+    return p;
+  
+}
+
+let w = 4;
+const z = 2;
+
 const a = foo(z);
+const b = foo(w);

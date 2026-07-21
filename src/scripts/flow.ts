@@ -1,4 +1,31 @@
 #!/usr/bin/env bun
+/**
+ * flow.ts — the `flow` CLI.
+ *
+ * Usage: `flow <directory>`
+ *
+ * End-to-end pipeline:
+ *   1. Glob every source file under the target directory and parse + walk
+ *      each one with `collectVariables` (engine.ts), collecting one
+ *      `Results` per file.
+ *   2. Resolve imports: for every "import" binding, find the real
+ *      declaration it points at in the imported file's `Results` and merge
+ *      the import's uses onto that real declaration. After this step,
+ *      import bindings themselves are dead weight (skipped in step 3).
+ *   3. Flatten every file's declarations into one `nodes` array — this is
+ *      the graph's vertex set. Each node keeps its accumulated `uses`.
+ *   4. Turn `Use.feeds` pointers into graph edges: for every use that feeds
+ *      a declaration, draw an edge from the use's *owning* declaration to
+ *      the *fed* declaration, deduping by (source, target) pair and
+ *      collecting every contributing use as an `occurrences` entry (so the
+ *      viewer can show the actual source line when an edge is clicked).
+ *   5. Serve the graph as JSON alongside the static viewer (src/viewer/)
+ *      over a local HTTP server, and open it in the default browser.
+ *
+ * This file is the "productionized" counterpart to debug.ts: same pipeline,
+ * but as a real CLI (argv parsing, process.exit, browser launch, graceful
+ * shutdown on `q`/Ctrl+C) instead of a programmatic entry point.
+ */
 import { collectVariables } from "./engine";
 import { parse } from "@typescript-eslint/typescript-estree";
 import { Glob } from "bun";
@@ -15,6 +42,7 @@ if (!targetArg) {
 const projectDir = resolve(process.cwd(), targetArg);
 const glob = new Glob("**/*.{ts,tsx,js,jsx,mjs,cjs}");
 
+// Step 1: parse + walk every file in the project.
 const treeResults: Record<string, Results> = {};
 // keep each file's source around so edge clicks can show the actual code
 // at the use site, not just a file:line reference.
@@ -28,12 +56,13 @@ for await (const file of glob.scan(projectDir)) {
     fileTexts[absolutePath] = code;
 }
 
+/** The source line (trimmed) at `file:line`, for edge-click display in the viewer. */
 function codeAt(file: string, line: number): string {
     return fileTexts[file]?.split("\n")[line - 1]?.trim() ?? "";
 }
 
-// for each file, for each import declaration, find the real declaration
-// in the source file and move the uses onto it
+// Step 2: for each file, for each import declaration, find the real
+// declaration in the source file and move the uses onto it.
 for (const fileResults of Object.values(treeResults)) {
     for (const binding of fileResults.declarations) {
         // only deal with imports
@@ -61,7 +90,7 @@ function nodeId(file: string, start: number): string {
     return `${file}:${start}`;
 }
 
-// Move the declarations into a flat "nodes" array:
+// Step 3: move the declarations into a flat "nodes" array:
 // every declaration from every file, uses already attached.
 type GraphNode = Binding & { id: string };
 type Occurrence = { file: string; line: number; code: string };
@@ -80,8 +109,8 @@ for (const fileResults of Object.values(treeResults)) {
     }
 }
 
-// Read the feeds stamped on each use: the use's owning declaration is the
-// thing being used, and use.feeds names the declaration that use flows into.
+// Step 4: read the feeds stamped on each use: the use's owning declaration is
+// the thing being used, and use.feeds names the declaration that use flows into.
 // Draw an edge owning declaration -> fed declaration for each one, keeping
 // every use site that contributed to it so clicking the edge can show the code.
 const nodeIds = new Set(graph.nodes.map((n) => n.id));
@@ -107,6 +136,7 @@ graph.edges.push(...edgesByKey.values());
 
 console.log(`flow: analyzed ${Object.keys(treeResults).length} files, found ${graph.nodes.length} declarations, ${graph.edges.length} feeds edges`);
 
+// Step 5: serve the graph JSON + the static viewer (src/viewer/), and open it.
 const viewerDir = new URL("../viewer/", import.meta.url).pathname;
 const graphJson = JSON.stringify(graph);
 

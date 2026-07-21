@@ -26,6 +26,21 @@ flow ./path/to/project
 
 flowdata scans for `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, and `.cjs` files, analyzes them, and opens a local graph viewer. Search for a symbol to reveal it and its connections; click a node for its declaration site and every use.
 
+## Where things live
+
+| Path | What's there |
+| --- | --- |
+| [`src/scripts/`](src/scripts/README.md) | The analysis engine itself — AST walker, CLI, dev utilities. **Start with [`src/scripts/README.md`](src/scripts/README.md)** for a guided tour. |
+| [`src/viewer/`](src/viewer) | The static, dependency-free graph viewer (Cytoscape.js) that `flow.ts` serves the graph JSON to. |
+| [`src/tests/`](src/tests) | Small fixture files used by the engine's dev utilities (`tree.ts`, `debug.ts`). |
+| [`NOTES.md`](NOTES.md) | Living dev notes: feature status, what's implemented per version, known limitations and deferred issues. |
+
+## Testing
+
+```bash
+bun test
+```
+
 ## Status
 
 Early and under active development.
@@ -36,7 +51,7 @@ Early and under active development.
 
 ## Internals
 
-See [ARCHITECTURE.md ](./ARCHITECTURE.md)for what has been shipped, what is currently being worked on, and the future plans for flowdata.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the project-level architecture — what has been shipped, what is currently being worked on, and future plans — and [`src/scripts/README.md`](src/scripts/README.md) for a code-level deep dive into the engine itself.
 
 ## License
 
