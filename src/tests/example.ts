@@ -1,4 +1,1 @@
-function outer() {
-    function inner() { return {a, b}; }
-    return c;
-}
+function foo(p) { return p; }

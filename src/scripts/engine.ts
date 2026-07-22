@@ -13,6 +13,9 @@ let currentFeedTarget : Binding | null = null;
 // Define the function the walker is currently in.
 let currentFunction : Binding | null = null;
 
+// Define whether we're in a ReturnStatement or not.
+let inReturn = false;
+
 // Build a Binding from an Identifier-like node (something with a `.name`).
 // varType is the declaration keyword (var/let/const) for variables, and ""
 // for binding kinds where it doesn't apply (params, functions, ...).
@@ -91,6 +94,18 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
                         start: currentFeedTarget.start,
                     };
                 }
+                if (inReturn && currentFunction) {
+                    if (!Array.isArray(currentFunction.returns)) {
+                        currentFunction.returns = [];
+                    }
+                    // push the IDENTITY of the thing being returned:
+                    currentFunction.returns.push({
+                        name: found.name,
+                        file: found.file,
+                        start: found.start
+                    });
+               
+                }
                 // push the use that got stamped
                 found.uses.push(use);
                 break;
@@ -153,7 +168,20 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     }
 
     if (node.type === "ReturnStatement") {
-        console.log("Current Function: ", currentFunction);
+        const previous = inReturn;
+        inReturn = true;
+        // node.argument contains the expression (x + y, {a, b}, c, etc.)
+        // that is returned
+
+        // Since there can also be empty returns: add a conditional that
+        // triggers walkVariables only if node.argument exists
+        // If it is an empty return statement, we don't need to walk it. 
+
+        if (node.argument)
+            walkVariables(node.argument, results, stack);
+
+        inReturn = previous;
+        return;
     }
 
     // Functions: declaration, expression, arrow.

@@ -69,7 +69,7 @@ export interface Binding {
     params?: Binding[];
     /** Reserved for interprocedural flow (tracing a function's `return`
      *  value back to its call sites) — not yet populated by engine.ts. */
-    returns?: Binding[];
+    returns?: {name: string, file: string, start: number}[];
     /** 0-based byte offset of the declaration's identifier (from `range`).
      *  Combined with `file`, this is the declaration's stable node id. */
     start: number;
