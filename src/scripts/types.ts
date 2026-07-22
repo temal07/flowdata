@@ -116,6 +116,13 @@ export type Scope = {
      *  scope, restored when the scope is popped so flow tracking doesn't
      *  leak into or out of the scope it doesn't belong to. */
     savedFeedTarget: Binding | null;
+    /** The `currentFunction` that was active just before entering this
+     *  scope, restored when the scope is popped so flow tracking doesn't
+     *  leak into or out of the scope it doesn't belong to. */
+    /* 
+        Only works for function scopes
+    */
+    savedFunction: Binding | null;
 }
 
 /** The output of walking one file: every declaration found in it, each

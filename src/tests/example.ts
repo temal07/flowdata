@@ -1,10 +1,4 @@
-function foo(p : any) {
-    return p;
-  
+function outer() {
+    function inner() { return {a, b}; }
+    return c;
 }
-
-let w = 4;
-const z = 2;
-
-const a = foo(z);
-const b = foo(w);
