@@ -98,13 +98,18 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
                     if (!Array.isArray(currentFunction.returns)) {
                         currentFunction.returns = [];
                     }
-                    // push the IDENTITY of the thing being returned:
-                    currentFunction.returns.push({
-                        name: found.name,
-                        file: found.file,
-                        start: found.start
-                    });
-               
+                    const alreadyIn = currentFunction.returns.some(
+                        r => r.start === found.start  && r.file === found.file
+                    );
+
+                    if (!alreadyIn) {
+                        // push the IDENTITY of the thing being returned:
+                        currentFunction.returns.push({
+                            name: found.name,
+                            file: found.file,
+                            start: found.start
+                        });
+                    }
                 }
                 // push the use that got stamped
                 found.uses.push(use);
