@@ -13,10 +13,11 @@ How flowdata analyzes a codebase, from source files to a data-flow graph.
 - **Argument → parameter flow** — at a direct call site, arguments are traced into the called function's parameters (`foo(z)` → `z` feeds `p`).
 - **Interactive graph viewer** — a local, search-to-reveal graph that stays readable on large codebases.
 - **Correct classification of arrow functions** — `const f = () => {}` is treated as a function, not a variable.
+- **Return → call-site flow** — tracing a function's return value back to whatever each caller assigns it to. This completes full interprocedural data flow: chaining argument → parameter → return → call site so a value can be followed all the way through a function (`z → p → return → a`).
 
 ### In progress
 
-- **Return → call-site flow** — tracing a function's return value back to whatever each caller assigns it to. This completes full interprocedural data flow: chaining argument → parameter → return → call site so a value can be followed all the way through a function (`z → p → return → a`).
+- **The query and traversal layer** - Now that the shipped functionalities are working, it is time for wrapping the data in a query layer that LLMs can traverse and look up to. 
 
 ### Future goals
 
