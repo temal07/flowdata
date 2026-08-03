@@ -29,7 +29,7 @@
 import { collectVariables } from "./engine";
 import { parse } from "@typescript-eslint/typescript-estree";
 import { Glob } from "bun";
-import type { Binding, Results } from "./types";
+import type { Graph, GraphEdge, Results } from "./types";
 import { resolve } from "path";
 
 const targetArg = Bun.argv[2];
@@ -42,6 +42,22 @@ if (!targetArg) {
 const projectDir = resolve(process.cwd(), targetArg);
 const glob = new Glob("**/*.{ts,tsx,js,jsx,mjs,cjs}");
 
+// Directories that are never the user's own source. Without this a plain
+// `flow .` walks node_modules and parses every dependency — in this repo
+// that's 496 of 505 matched files, and the resulting graph runs to gigabytes.
+const IGNORED_DIRS = new Set([
+    "node_modules", ".git", "dist", "build", "out", "coverage", ".next", "vendor",
+]);
+
+/** Whether a path (relative to `projectDir`) is project source worth walking. */
+function isProjectSource(relativePath: string): boolean {
+    if (relativePath.split("/").some((segment) => IGNORED_DIRS.has(segment))) return false;
+    // Ambient type declarations: no runtime values, so no data flow to trace,
+    // and they're the bulk of what ships inside packages.
+    if (relativePath.endsWith(".d.ts")) return false;
+    return true;
+}
+
 // Step 1: parse + walk every file in the project.
 const treeResults: Record<string, Results> = {};
 // keep each file's source around so edge clicks can show the actual code
@@ -49,6 +65,7 @@ const treeResults: Record<string, Results> = {};
 const fileTexts: Record<string, string> = {};
 
 for await (const file of glob.scan(projectDir)) {
+    if (!isProjectSource(file)) continue;
     const absolutePath = resolve(projectDir, file);
     const code = await Bun.file(absolutePath).text();
     const tree = parse(code, { loc: true, range: true });
@@ -56,9 +73,21 @@ for await (const file of glob.scan(projectDir)) {
     fileTexts[absolutePath] = code;
 }
 
-/** The source line (trimmed) at `file:line`, for edge-click display in the viewer. */
+/** Longest snippet stored per edge occurrence. A minified file is a handful
+ *  of lines hundreds of kilobytes wide (cytoscape.min.js: 33 lines, longest
+ *  229k chars); storing one verbatim per edge is what turned a 9-file graph
+ *  into 1.1GB of JSON. The viewer only renders a single line anyway. */
+const MAX_SNIPPET = 200;
+
+/** Lines per file, split once — `codeAt` is called for every occurrence of
+ *  every edge, and re-splitting a large source each time is not free. */
+const fileLines: Record<string, string[]> = {};
+
+/** The source line (trimmed, truncated) at `file:line`, for edge-click display. */
 function codeAt(file: string, line: number): string {
-    return fileTexts[file]?.split("\n")[line - 1]?.trim() ?? "";
+    const lines = (fileLines[file] ??= fileTexts[file]?.split("\n") ?? []);
+    const text = lines[line - 1]?.trim() ?? "";
+    return text.length > MAX_SNIPPET ? `${text.slice(0, MAX_SNIPPET)}…` : text;
 }
 
 // Step 2: for each file, for each import declaration, find the real
@@ -92,10 +121,7 @@ function nodeId(file: string, start: number): string {
 
 // Step 3: move the declarations into a flat "nodes" array:
 // every declaration from every file, uses already attached.
-type GraphNode = Binding & { id: string };
-type Occurrence = { file: string; line: number; code: string };
-type GraphEdge = { source: string; target: string; occurrences: Occurrence[] };
-const graph: { root: string; nodes: GraphNode[]; edges: GraphEdge[] } = { root: projectDir, nodes: [], edges: [] };
+const graph: Graph = { root: projectDir, nodes: [], edges: [] };
 
 for (const fileResults of Object.values(treeResults)) {
     for (const declaration of fileResults.declarations) {
@@ -137,8 +163,15 @@ graph.edges.push(...edgesByKey.values());
 console.log(`flow: analyzed ${Object.keys(treeResults).length} files, found ${graph.nodes.length} declarations, ${graph.edges.length} feeds edges`);
 
 // Step 5: serve the graph JSON + the static viewer (src/viewer/), and open it.
-const viewerDir = new URL("../viewer/", import.meta.url).pathname;
 const graphJson = JSON.stringify(graph);
+
+// Write the graph to a JSON file.
+const outPath = resolve(process.cwd(), Bun.argv[3] ?? "graph.json");
+await Bun.write(outPath, graphJson);
+console.log(`flow: wrote graph to ${outPath}`)
+
+// Serve the graph viewer and the graph JSON file. and open it in the browser.
+const viewerDir = new URL("../viewer/", import.meta.url).pathname;
 
 const viewerFiles: Record<string, string> = {
     "/": "index.html",

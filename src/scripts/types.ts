@@ -68,7 +68,7 @@ export interface Binding {
      *  (`const foo = () => {}`). */
     params?: Binding[];
     /** Reserved for interprocedural flow (tracing a function's `return`
-     *  value back to its call sites) — not yet populated by engine.ts. */
+     *  value back to its call sites) */
     returns?: {name: string, file: string, start: number}[];
     /** 0-based byte offset of the declaration's identifier (from `range`).
      *  Combined with `file`, this is the declaration's stable node id. */
@@ -130,3 +130,45 @@ export type Scope = {
 export interface Results {
     declarations: Binding[];
 }
+
+/**
+ * The serialized graph — flow.ts's final output, written to `graph.json`
+ * and served to the viewer. Distinct from the shapes above: those describe
+ * the in-memory analysis, these describe the on-disk artifact that
+ * consumers (the viewer, query.ts, external tooling) read back.
+ */
+
+/** A declaration promoted to a graph vertex, with a stable id attached.
+ *  Imports and `role: "use"` entries never become nodes — flow.ts resolves
+ *  imports onto their real declaration first. */
+export type GraphNode = Binding & {
+    /** `${file}:${start}` — unique, since a byte offset is unique per file. */
+    id: string;
+};
+
+/** One use site that contributed to an edge, kept so the viewer can show
+ *  the actual source line when an edge is clicked. */
+export type Occurrence = {
+    file: string;
+    line: number;
+    /** The trimmed source line at `file:line`. */
+    code: string;
+};
+
+/** A data-flow edge: some use of `source` fed `target` (a variable
+ *  initializer or a call argument matched to a parameter). Deduped by
+ *  (source, target); every contributing use site lands in `occurrences`. */
+export type GraphEdge = {
+    /** The `GraphNode.id` of the declaration being used. */
+    source: string;
+    /** The `GraphNode.id` of the declaration the value flows into. */
+    target: string;
+    occurrences: Occurrence[];
+};
+
+export type Graph = {
+    /** Absolute path of the analyzed directory, for rendering paths relative to it. */
+    root: string;
+    nodes: GraphNode[];
+    edges: GraphEdge[];
+};
