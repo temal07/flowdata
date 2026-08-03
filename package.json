@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "bin": {
-    "flow": "./src/scripts/flow.ts"
+    "flow": "./src/scripts/flow.ts",
+    "query": "./src/scripts/query.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
