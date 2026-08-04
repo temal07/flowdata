@@ -15,16 +15,18 @@ How flowdata analyzes a codebase, from source files to a data-flow graph.
 - **Correct classification of arrow functions** — `const f = () => {}` is treated as a function, not a variable.
 - **Return → call-site flow** — tracing a function's return value back to whatever each caller assigns it to. This completes full interprocedural data flow: chaining argument → parameter → return → call site so a value can be followed all the way through a function (`z → p → return → a`).
 
+- **Query and traversal layer** — `query <name>` reads the emitted `graph.json` and traces a declaration forward through `feeds` edges and function returns, so the graph is consumable without re-running the analysis.
+
 ### In progress
 
-- **The query and traversal layer** - Now that the shipped functionalities are working, it is time for wrapping the data in a query layer that LLMs can traverse and look up to. 
+- **Test harness** — the project has no automated tests; correctness has been verified by reading output. See `NOTES.md` for the gaps this has allowed to go unnoticed.
 
 ### Future goals
 
+- **Scope-stack fix for classes, methods, types, and catch params** — these are emitted as nodes but never pushed onto the scope stack, so no use can resolve to them.
 - **Method-call resolution** — handle `obj.method()` call sites, not just direct calls, so interprocedural flow fires on the majority of real-world calls.
-- **Two-pass resolution** — resolve uses that appear before their declaration in source order (function hoisting, some loop constructs).
-- **Complete JS import resolution** — resolve imports across extensions rather than assuming `.ts`.
-- **Query layer** — programmatic operations over the graph ("find inputs", "trace X to Y").
+- **Two-pass resolution** — resolve uses that appear before their declaration in source order (function hoisting, forward references, some loop constructs).
+- **Complete JS import resolution** — resolve imports across extensions and index files rather than assuming `.ts`.
 - **MCP server** — expose the graph to AI agents so they can query a codebase's data flow directly.
 - **Multi-language support** — additional language extractors emitting the same neutral declaration format, so the graph, linking, and query layers work unchanged across languages.
 
@@ -56,13 +58,28 @@ A function's binding carries its parameters (by identity), for both `function fo
 
 At a call site with a direct (identifier) callee, the callee is resolved against the scope stack to find the function's binding. Each argument is then walked with the corresponding parameter set as the flow target, so a value passed into a call is traced into the parameter it lands in. Arguments beyond the parameter list are still walked, with no target.
 
+Because arguments are walked recursively, nested calls chain: in `wrap(id(z))`, `z` feeds `id`'s parameter and `id` feeds `wrap`'s parameter.
+
+Only identifier callees are resolved. A method call (`obj.m(x)`) falls through to the generic walk, so its arguments are stamped with whatever flow target is already active — usually the declaration the call result is assigned to. The edge is real, but the hop into the method's parameters is missing.
+
+## Return → call-site flow
+
+The walk tracks two extra pieces of state: the function it is currently inside, and whether it is inside a `ReturnStatement`. When an identifier resolves while both hold, the identity of the resolved declaration is appended to the enclosing function's `returns` array (deduplicated by `{ file, start }`).
+
+That gives each function node a list of what it hands back. The call site half already exists — `const a = foo()` records `foo` feeding `a` — so joining them completes the chain: `z → p` (argument to parameter), `p ∈ foo.returns`, `foo → a` (call result to assignment). `query.ts` builds the reverse index of `returns` once at startup, so tracing a value can hop from a declaration to every function that returns it and continue from that function's outgoing edges.
+
 ## Output
 
 Per-file results are flattened into a node list for the graph viewer. Each node is a declaration carrying its uses and flow edges; the viewer renders nodes on demand (search-to-reveal) so the graph stays readable on large codebases.
 
 ## Known limitations
 
-- Data-flow tracing is intraprocedural plus argument→parameter; it does not yet follow values back out through function returns.
-- Call resolution handles direct calls (`foo(x)`); method calls (`obj.foo(x)`) are not yet resolved for flow.
-- The single-pass walk does not resolve uses that appear before their declaration in source order (function hoisting, some loop constructs). A two-pass resolution would fix this.
-- Cross-file linking assumes `.ts` source files; pure-JS import resolution is incomplete.
+Full detail, with reproducing snippets, is in `NOTES.md`.
+
+- Call resolution handles direct calls (`foo(x)`); method calls (`obj.foo(x)`) do not reach the method's parameters.
+- The single-pass walk cannot resolve a use that appears before its declaration in source order (function hoisting, forward references, loop bodies). The use is dropped silently — no node, no edge, no warning.
+- Classes, class methods, TS type declarations, and catch parameters are recorded as nodes but never pushed onto the scope stack, so no use ever resolves to them.
+- A destructuring declaration only takes its last bound name as the flow target: `const { a, b } = foo()` gives `foo → b` and nothing for `a`.
+- Only declaration initializers set a flow target; reassignment (`x = foo()`) produces no edge.
+- Shorthand object properties (`{ z }`) record the same use twice, inflating an edge's occurrence list.
+- Cross-file linking appends `.ts` unconditionally, so pure-JS projects, directory imports, and explicit extensions do not link.
