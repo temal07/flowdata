@@ -65,11 +65,20 @@ const treeResults: Record<string, Results> = {};
 const fileTexts: Record<string, string> = {};
 
 for await (const file of glob.scan(projectDir)) {
+    // disregards non-project source files 
+    // specified in the isProjectSource function
     if (!isProjectSource(file)) continue;
+    // resolves the absolute path of the file
     const absolutePath = resolve(projectDir, file);
+    // reads the file's text content
     const code = await Bun.file(absolutePath).text();
+    // parses the file's code into an AST
     const tree = parse(code, { loc: true, range: true });
+    // collects the variables in the AST
+    // and stores the results in the treeResults object
+    // format: {"some path": Results}
     treeResults[absolutePath] = collectVariables(tree, absolutePath);
+    // stores the file's text content
     fileTexts[absolutePath] = code;
 }
 
@@ -94,7 +103,7 @@ function codeAt(file: string, line: number): string {
 // declaration in the source file and move the uses onto it.
 for (const fileResults of Object.values(treeResults)) {
     for (const binding of fileResults.declarations) {
-        // only deal with imports
+        // disregard non-import bindings
         if (binding.kind !== "import") continue;
 
         // assign the source of the import
