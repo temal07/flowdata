@@ -78,7 +78,9 @@ type Result = {...}; const x: Result   // Result: 0 uses
 try {} catch (err) { const e = err }   // err: 0 uses
 ```
 
-Fix is small: push these onto the current scope like every other binding.
+Fix is small for classes, methods, and catch params: push them onto the current scope like every other binding.
+
+Types are the exception — the walk also returns early on `TSTypeAnnotation` by design, to keep annotations out of the graph. So the scope-stack fix alone won't make `const x: Result` resolve; that needs a separate decision about whether type references belong in a data-flow graph at all.
 
 ### 4. Destructuring only binds the last name
 
