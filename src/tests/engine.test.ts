@@ -62,7 +62,7 @@ function useCounts(source: string): Record<string, number> {
 // Only the argument->parameter hop is asserted: what else the call site should
 // emit (`score -> out`? `r -> out`?) is still an open design question, so this
 // deliberately uses toContain rather than pinning the whole edge set.
-test.todo("a method call traces its argument into the method's parameter", () => {
+test("a method call traces its argument into the method's parameter", () => {
     expect(edges(`class R { score(p) { return p } } const r = new R(); const z = 1; const out = r.score(z);`))
         .toContain("z -> p");
 });
@@ -106,9 +106,24 @@ test.todo("reassignment produces an edge", () => {
     expect(edges(`function foo(){return 1} let x; x = foo();`)).toEqual(["foo -> x"]);
 });
 
-// Gap 6 — shorthand property key and value are the same identifier, walked twice.
-test.todo("a shorthand property records one use, not two", () => {
+// Gap 6 — a non-computed property key is a label, not a reference. Shorthand
+// was the visible symptom (key and value are separate nodes at the same
+// offset, so the walk recorded `z` twice), but `{ a: b }` was the worse case:
+// it invented a use of `a` that isn't in the source. Only a computed key,
+// `{ [k]: v }`, really reads a variable — that last test is the guard on the
+// `node.computed` check, and it fails if the Property branch skips the key
+// unconditionally.
+test("a shorthand property records one use, not two", () => {
     expect(edges(`const z = 1; const o = { z };`)).toEqual(["z -> o"]);
+});
+
+test("a property key that shadows a variable records no use", () => {
+    expect(edges(`const a = 9; const b = 2; const o = { a: b };`)).toEqual(["b -> o"]);
+});
+
+test("a computed property key still resolves as a use", () => {
+    expect(edges(`const k = "x"; const v = 2; const o = { [k]: v };`))
+        .toEqual(["k -> o", "v -> o"]);
 });
 
 // Gap 7 (import resolution assumes `.ts`) is cross-file, so it can't be tested
