@@ -12,7 +12,8 @@ function edges(source: string): string[] {
     const output: string[] = [];
     for (const decl of results.declarations) {
         for (const use of decl.uses) {
-            if (use.feeds) output.push(`${decl.name} -> ${use.feeds.name}`)
+            // one use can feed several declarations — flatten to one string each
+            for (const fed of use.feeds ?? []) output.push(`${decl.name} -> ${fed.name}`)
         }
     }
     return output.sort();
@@ -67,38 +68,30 @@ test("a method call traces its argument into the method's parameter", () => {
         .toContain("z -> p");
 });
 
-// Gap 2 — uses before their declaration are dropped (no node, no edge, no warning).
-test.todo("a call above a hoisted function still records a use", () => {
-    expect(useCounts(`foo(); function foo(p) {}`).foo).toBe(1);
-});
-
-test.todo("a forward reference resolves to the later declaration", () => {
-    expect(edges(`const a = b; const b = 2;`)).toEqual(["b -> a"]);
-});
-
-test.todo("a loop body sees the loop variable", () => {
-    expect(edges(`for (let i = 0; i < 3; i++) { const b = i; }`)).toEqual(["i -> b"]);
-});
-
-// Gap 3 — bindings that bypass the scope stack can never be resolved against.
-test.todo("a class is resolvable as a use", () => {
-    expect(edges(`class R {} const r = R;`)).toEqual(["R -> r"]);
-});
-
-test.todo("a catch parameter is resolvable as a use", () => {
-    expect(edges(`try {} catch (err) { const e = err; }`)).toEqual(["err -> e"]);
-});
-
 // TS type declarations are the third member of this family, but they need a
 // decision first: `TSTypeAnnotation` is skipped on purpose (engine.ts) to keep
 // annotations out of the graph. Putting types on the scope stack alone won't
 // make `const x: Result` resolve — that's a separate call about whether type
 // references belong in a data-flow graph at all.
 
-// Gap 4 — a destructuring pattern only stamps its last bound name.
-test.todo("destructuring binds every name, not just the last", () => {
+// Gap 4 — the feed target used to be "the last declaration in scope", which
+// was wrong two ways: a pattern binding several names only stamped one, and a
+// multi-declarator statement stamped the *statement's* last name rather than
+// the declarator's own. The second case produced an actively wrong edge, so
+// it's tested here alongside the filed one.
+test("destructuring binds every name, not just the last", () => {
     expect(edges(`function foo(){return 1} const { a, b } = foo();`))
         .toEqual(["foo -> a", "foo -> b"]);
+});
+
+test("each declarator feeds its own name, not the statement's last", () => {
+    expect(edges(`function f(){return 1} function g(){return 2} const a = f(), b = 9, c = g();`))
+        .toEqual(["f -> a", "g -> c"]);
+});
+
+test("a nested pattern binds its leaves, not the intermediate key", () => {
+    expect(edges(`function foo(){return 1} const { a: { c }, b } = foo();`))
+        .toEqual(["foo -> b", "foo -> c"]);
 });
 
 // Gap 5 — only declaration initializers set a flow target.
@@ -129,3 +122,28 @@ test("a computed property key still resolves as a use", () => {
 // Gap 7 (import resolution assumes `.ts`) is cross-file, so it can't be tested
 // through collectVariables. It needs the `analyze(dir)` extraction out of
 // flow.ts and a fixture directory.
+
+
+ // ==== TODOs ====
+
+// Gap 2 — uses before their declaration are dropped (no node, no edge, no warning).
+test.todo("a call above a hoisted function still records a use", () => {
+    expect(useCounts(`foo(); function foo(p) {}`).foo).toBe(1);
+});
+
+test.todo("a forward reference resolves to the later declaration", () => {
+    expect(edges(`const a = b; const b = 2;`)).toEqual(["b -> a"]);
+});
+
+test.todo("a loop body sees the loop variable", () => {
+    expect(edges(`for (let i = 0; i < 3; i++) { const b = i; }`)).toEqual(["i -> b"]);
+});
+
+// Gap 3 — bindings that bypass the scope stack can never be resolved against.
+test.todo("a class is resolvable as a use", () => {
+    expect(edges(`class R {} const r = R;`)).toEqual(["R -> r"]);
+});
+
+test.todo("a catch parameter is resolvable as a use", () => {
+    expect(edges(`try {} catch (err) { const e = err; }`)).toEqual(["err -> e"]);
+});

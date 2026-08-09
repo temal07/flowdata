@@ -153,18 +153,23 @@ const edgesByKey = new Map<string, GraphEdge>();
 for (const node of graph.nodes) {
     for (const use of node.uses) {
         if (!use.feeds) continue;
-        const target = nodeId(use.feeds.file, use.feeds.start);
-        // the fed declaration may have been filtered out (e.g. an import);
-        // only keep edges where both ends are real graph nodes.
-        if (!nodeIds.has(target)) continue;
+        // One use can feed several declarations — `const { a, b } = foo()`
+        // reads foo once and flows into both — so this is a list, and each
+        // entry becomes its own edge from the same use site.
+        for (const fed of use.feeds) {
+            const target = nodeId(fed.file, fed.start);
+            // the fed declaration may have been filtered out (e.g. an import);
+            // only keep edges where both ends are real graph nodes.
+            if (!nodeIds.has(target)) continue;
 
-        const key = `${node.id}->${target}`;
-        let edge = edgesByKey.get(key);
-        if (!edge) {
-            edge = { source: node.id, target, occurrences: [] };
-            edgesByKey.set(key, edge);
+            const key = `${node.id}->${target}`;
+            let edge = edgesByKey.get(key);
+            if (!edge) {
+                edge = { source: node.id, target, occurrences: [] };
+                edgesByKey.set(key, edge);
+            }
+            edge.occurrences.push({ file: use.file, line: use.line, code: codeAt(use.file, use.line) });
         }
-        edge.occurrences.push({ file: use.file, line: use.line, code: codeAt(use.file, use.line) });
     }
 }
 graph.edges.push(...edgesByKey.values());

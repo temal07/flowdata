@@ -7,7 +7,10 @@ import { resolve, dirname } from "path";
 let currentFile = "";
 
 // Define the variable that is fed
-let currentFeedTarget : Binding | null = null;
+// A list, not a single binding: `const { a, b } = foo()` has one initializer
+// feeding two declarations at once. Empty means "not in a flow-carrying
+// position", which is what `null` used to mean.
+let currentFeedTargets : Binding[] = [];
 
 // Define the function the walker is currently in.
 let currentFunction : Binding | null = null;
@@ -52,7 +55,7 @@ export function collectVariables(node: TSESTree.Node, file: string): Results {
     // A stack to know which scope we're in, so that 2 or more variables with
     // the same name can be found without ambiguity. Created fresh per call so
     // repeated invocations don't leak declarations/uses from earlier walks.
-    const stack: Scope[] = [{ name: "global", declarations: [], savedFeedTarget: null, savedFunction: null }];
+    const stack: Scope[] = [{ name: "global", declarations: [], savedFeedTargets: [], savedFunction: null }];
     walkVariables(node, results, stack);
     results.declarations.push(...stack[0]!.declarations);   // save global
     return results;
@@ -85,13 +88,13 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             if (found) {
                 if (node.range[0] === found.start) { break; }
                 const use = makeUse(node);
-                if (currentFeedTarget) {
-                    use.feeds = { 
-                        name: currentFeedTarget.name, 
-                        file: currentFeedTarget.file,
-                        line: currentFeedTarget.line,
-                        start: currentFeedTarget.start,
-                    };
+                if (currentFeedTargets.length > 0) {
+                    use.feeds = currentFeedTargets.map(t => ({
+                        name: t.name,
+                        file: t.file,
+                        line: t.line,
+                        start: t.start,
+                    }));
                 }
                 if (inReturn && currentFunction) {
                     if (!Array.isArray(currentFunction.returns)) {
@@ -138,31 +141,42 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     // node.kind is the "var" | "let" | "const" keyword — record it as varType.
     // The id can be a destructuring pattern, so go through collectPatternNames;
     // the init is where uses live, so harvest those as "use" bindings.
+    // Each declarator is handled here rather than in a separate
+    // `VariableDeclarator` branch, because a declarator on its own can't see
+    // `node.kind` (the var/let/const keyword) and — more importantly — can't
+    // tell which bindings are *its own*. Slicing the scope's declarations
+    // around each collectPatternNames call pairs a declarator with exactly
+    // the names it introduced, which is what the feed target has to be.
+    //
+    // The old code took "the last declaration in scope" as the target. That
+    // was wrong twice over: `const { a, b } = foo()` fed only `b`, and
+    // `const a = foo(), b = 2` fed `b` — a variable foo has nothing to do
+    // with — because every declarator's names were pushed up front.
     if (node.type === "VariableDeclaration") {
         for (const decl of node.declarations) {
+            const scopeDeclarations = stack[stack.length - 1]!.declarations;
+            const before = scopeDeclarations.length;
+
             // Prevent the classification of all "id" fields
             // as variables
             const initType = decl.init?.type;
             const isFunction = initType === "ArrowFunctionExpression" || initType === "FunctionExpression";
-            collectPatternNames(decl.id, stack[stack.length-1]!.declarations, isFunction ? "function" : "variable", node.kind);
+            collectPatternNames(decl.id, scopeDeclarations, isFunction ? "function" : "variable", node.kind);
+
+            // Everything pushed by this declarator — one name normally, several
+            // for a destructuring pattern, none for `let x` with no init.
+            const targets = scopeDeclarations.slice(before);
+
+            const previous = currentFeedTargets;   // save
+            currentFeedTargets = targets;          // set
+
+            if (decl.init) {                       // only if there's an init to walk
+                walkVariables(decl.init, results, stack); // walk — uses inside get stamped
+            }
+
+            currentFeedTargets = previous;         // restore
         }
-    }
-
-    // Handle node.init separately in VariableDeclarator 
-    // to stamp the feeds prop
-    if (node.type === "VariableDeclarator") {
-        const scopeDeclarations = stack[stack.length - 1]!.declarations;
-        const target = scopeDeclarations[scopeDeclarations.length - 1] ?? null;
-
-        const previous = currentFeedTarget;   // save
-        currentFeedTarget = target;           // set
-
-        if (node.init) {                      // only if there's an init to walk
-            walkVariables(node.init, results, stack); // walk — uses inside get stamped
-        }
-
-        currentFeedTarget = previous;         // restore
-        return;   
+        return;   // declarators are walked above; don't let the generic loop repeat them
     }
 
     // A bare expression statement — e.g. `rank(query)` — references variables
@@ -221,10 +235,12 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             funcBinding = makeBinding(node.id, "declaration", "function", "N/A");
             stack[stack.length - 1]!.declarations.push(funcBinding);
         } else {
-            // If there is no node.id (anonymous function), check if currentFeedTarget is available
-            // and treat it as the function binding to which to attach params later.
-            if (currentFeedTarget && (currentFeedTarget.kind === "function")) {
-                funcBinding = currentFeedTarget;
+            // If there is no node.id (anonymous function), check whether a feed
+            // target is available and treat it as the function binding to which
+            // to attach params later. Only a lone target can name a function —
+            // `const { a, b } = () => {}` has two, and neither is the function.
+            if (currentFeedTargets.length === 1 && currentFeedTargets[0]!.kind === "function") {
+                funcBinding = currentFeedTargets[0];
             }
         }
     
@@ -241,10 +257,10 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         stack.push({
             name: node.id?.name ?? "anonymous_func",
             declarations: paramDeclarations,
-            savedFeedTarget: currentFeedTarget,
+            savedFeedTargets: currentFeedTargets,
             savedFunction: currentFunction,
         });
-        currentFeedTarget = null;
+        currentFeedTargets = [];
         currentFunction = funcBinding ?? null;
     }
 
@@ -285,7 +301,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             // Plain call ==> the name is at node.callee.name
             calleeName = node.callee.name;
         } else if (node.callee.type === "MemberExpression" && !node.callee.computed) {
-            // method (dotted) call ==> the name is at node.callee.property.name
+            // Method (dotted) call ==> the name is at node.callee.property.name
             calleeName = node.callee.property.name;
         }
 
@@ -298,11 +314,12 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
 
             let save;
             for (let argIndex = 0; argIndex < node.arguments.length; argIndex++) {
-                save = currentFeedTarget;
-                currentFeedTarget = calledFunc?.params?.[argIndex] ?? null;
+                save = currentFeedTargets;
+                const param = calledFunc?.params?.[argIndex];
+                currentFeedTargets = param ? [param] : [];
                 const arg = node.arguments[argIndex];
                 if (arg) walkVariables(arg, results, stack);   // guard: fewer args than params
-                currentFeedTarget = save;
+                currentFeedTargets = save;
             }
 
             walkVariables(node.callee, results, stack);
@@ -314,7 +331,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         stack.push({
             name: "block",
             declarations: [],
-            savedFeedTarget: currentFeedTarget,
+            savedFeedTargets: currentFeedTargets,
             savedFunction: currentFunction,
         })
     }
@@ -354,10 +371,10 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         const methodBinding = makeBinding(node.key, "declaration", "function");
         stack[stack.length - 1]?.declarations.push(methodBinding);
 
-        const previous = currentFeedTarget; // save the old value
-        currentFeedTarget = methodBinding; // set
+        const previous = currentFeedTargets; // save the old value
+        currentFeedTargets = [methodBinding]; // set
         walkVariables(node.value, results, stack); // walk 
-        currentFeedTarget = previous; // restore
+        currentFeedTargets = previous; // restore
         return; // node.key is the declaration itself, nothing to resolve there.
     }
 
@@ -386,7 +403,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         node.type === "FunctionExpression" ||
         node.type === "ArrowFunctionExpression") {
         const closing = stack[stack.length - 1]!;
-        currentFeedTarget = closing.savedFeedTarget;
+        currentFeedTargets = closing.savedFeedTargets;
         currentFunction = closing.savedFunction;
         results.declarations.push(...closing.declarations);
         stack.pop();
@@ -394,7 +411,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     
     if (node.type === "BlockStatement") {
         const closing = stack[stack.length - 1]!;
-        currentFeedTarget = closing.savedFeedTarget;
+        currentFeedTargets = closing.savedFeedTargets;
         currentFunction = closing.savedFunction;
         results.declarations.push(...closing.declarations);
         stack.pop();

@@ -92,12 +92,18 @@ export interface Use {
      *  declaration's). */
     start: number;
     /** Set when this use occurs somewhere a value flows onward from —  a
-     *  variable initializer or a call argument. Points at the `{file,
-     *  start}` identity of the declaration the value flows *into* (the
+     *  variable initializer or a call argument. Each entry is the `{file,
+     *  start}` identity of a declaration the value flows *into* (the
      *  declared variable, or the matching function parameter). Absent when
      *  the use isn't inside a flow-carrying position. See the "feeds
-     *  mechanism" doc comment at the top of engine.ts. */
-    feeds?: { name: string; file: string; line: number; start: number; };
+     *  mechanism" doc comment at the top of engine.ts.
+     *
+     *  It's a list because one use can feed several declarations at once:
+     *  `const { a, b } = foo()` reads `foo` a single time, and that value
+     *  flows into both `a` and `b`. Recording it as one use with two targets
+     *  keeps `uses` an honest count of source occurrences — the alternative,
+     *  one duplicated use per target, is the bug fixed in gap 6. */
+    feeds?: { name: string; file: string; line: number; start: number; }[];
 }
 
 /**
@@ -112,10 +118,10 @@ export interface Use {
 export type Scope = {
     name: string;
     declarations: Binding[];
-    /** The `currentFeedTarget` that was active just before entering this
+    /** The `currentFeedTargets` that were active just before entering this
      *  scope, restored when the scope is popped so flow tracking doesn't
      *  leak into or out of the scope it doesn't belong to. */
-    savedFeedTarget: Binding | null;
+    savedFeedTargets: Binding[];
     /** The `currentFunction` that was active just before entering this
      *  scope, restored when the scope is popped so flow tracking doesn't
      *  leak into or out of the scope it doesn't belong to. */
