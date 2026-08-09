@@ -19,8 +19,12 @@ import { Glob } from "bun";
 import type { Binding, Results } from "./types";
 import { resolve } from "path";
 
-// the directory the debug.ts is gonna work in.
-const dirToAnalyse : string = "../tests";
+// The directory debug.ts is gonna work in. Anchored to this file rather than
+// written relative ("../tests"), because a bare relative path resolves against
+// the process cwd — so it only worked when run from inside src/scripts, and
+// died with ENOENT from the repo root, which is how the README invokes it.
+// Same `import.meta.dir` approach as tree.ts.
+const dirToAnalyse : string = resolve(import.meta.dir, "../tests");
 
 /**
  * Walk every source file under `projectDir`, resolve imports to their real
