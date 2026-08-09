@@ -31,7 +31,9 @@ Most of these are guarded by `bun test` (`src/tests/engine.test.ts`); the rest w
 
 **Scope and shadowing.** `const x = 1; function f() { const x = 2; const y = x }` — the inner `x` feeds `y`; the outer `x` is untouched.
 
-**Feed targets nest correctly.** Save/restore around each declarator means `const a = () => { const b = x }` gives `x` feeds `b`, not `a`. Multiple declarators (`const a = 1, b = foo()`) and multiple uses in one init (`const c = x + y`) both resolve to the right target.
+**Feed targets nest correctly.** Save/restore around each declarator means `const a = () => { const b = x }` gives `x` feeds `b`, not `a`. Multiple uses in one init (`const c = x + y`) resolve to the right target.
+
+**Every declarator feeds its own names.** `const a = f(), b = 9, c = g()` gives `f` feeds `a` and `g` feeds `c`; `const { a, b } = foo()` feeds both. (The earlier claim here that multiple declarators already worked was wrong — see gap 4.)
 
 **Full interprocedural chain.** `function foo(p) { return p } const z = 2; const a = foo(z)` produces `z` feeds `p`, `foo.returns = [p]`, and `foo` feeds `a`. `query.ts` stitches these into one path — this is the v1.2 goal, and it is done. (The old note saying flow is "intraprocedural only" was stale.)
 
@@ -86,13 +88,26 @@ type Result = {...}; const x: Result   // Result: still 0 uses
 
 Related, fixed alongside: `makeBinding` used to read `idNode.name` unconditionally, producing a nameless binding for literal keys like `class R { "my-method"() {} }`. It now falls back to `String(idNode.value)`, matching `makeUse`.
 
-### 4. Destructuring only binds the last name
+### 4. Declarators fed the wrong target — ✅ RESOLVED
 
-`VariableDeclarator` takes "the last declaration in the current scope" as its feed target, so a pattern that binds several names only stamps one.
+Filed as "destructuring only binds the last name," but the root cause was broader. `VariableDeclaration` pushed **every** declarator's names up front, then each `VariableDeclarator` took "the last declaration in the current scope" as its feed target. So a declarator had no idea which bindings were its own:
 
 ```ts
-const { a, b } = foo();   // foo feeds `b`; `a` gets nothing
+const { a, b } = foo();               // foo fed `b` only — `a` got nothing
+const a = foo(), b = 2;               // foo fed `b` — a variable it never touches
+const a = f(), b = 9, c = g();        // f and g both fed `c`
 ```
+
+The second and third lines are the worse half: not a missing edge but a **wrong** one, pointing at a variable the value never reaches. This also falsified the "What works" claim about multiple declarators, which only looked right because the example happened to put the call in the last declarator.
+
+Fix had two parts:
+
+- **Pairing.** The `VariableDeclarator` branch is gone; declarators are now walked inside the `VariableDeclaration` branch, which slices the scope's declarations around each `collectPatternNames` call. That slice *is* the set of names the declarator introduced — one normally, several for a pattern, none for a bare `let x`. A declarator can't do this itself: it can't see `node.kind` for the var/let/const keyword either.
+- **Multiple targets.** `currentFeedTarget: Binding | null` became `currentFeedTargets: Binding[]` (empty = not in a flow-carrying position), and `Use.feeds` became a list. One use genuinely can feed several declarations — `const { a, b } = foo()` reads `foo` once. Recording it as one use with two targets keeps `uses` an honest count of source occurrences; the alternative, a duplicated use per target, is the bug gap 6 removed. `flow.ts` loops over the list and emits one edge per entry.
+
+Nested patterns and rest elements fall out for free, since `collectPatternNames` already walked them: `const { a: { c }, b } = foo()` feeds `c` and `b` (not the intermediate key `a`), and `const [a, ...rest] = foo()` feeds both.
+
+**Behavior change worth knowing:** names are now pushed per declarator instead of all up front, so a forward reference *within one statement* — `const a = () => b, b = 2` — no longer resolves. That reading was accidental (it relied on `b` being pushed before `a`'s initializer was walked), and matches gap 2, which is where forward references belong.
 
 ### 5. Reassignment isn't tracked
 
@@ -126,12 +141,11 @@ The resolver appends `.ts` unconditionally, so pure-JS projects extract fine but
 
 ## Next up
 
-1. **Destructuring feed targets** (gap 4) — `const { a, b } = foo()` still only stamps `b`. Smallest remaining.
-2. **Reassignment** (gap 5) — `x = foo()` sets no feed target at all.
-3. **Cross-file test harness** — engine-level tests exist now (`src/tests/engine.test.ts`, 8 passing), but `flow.ts` does linking, graph assembly, and serving at module scope, so there's no function to call. Extract `analyze(dir) → Graph` before anything can test linking, or gap 7.
-4. **Two-pass resolution** (gap 2) — invasive rewrite of the core walk. Everything above is cheaper; do this after.
-5. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all?
-6. **MCP wrapper** — serve the graph to agents once coverage is trustworthy.
+1. **Reassignment** (gap 5) — `x = foo()` sets no feed target at all. Smallest remaining.
+2. **Cross-file test harness** — engine-level tests exist now (`src/tests/engine.test.ts`, 11 passing), but `flow.ts` does linking, graph assembly, and serving at module scope, so there's no function to call. Extract `analyze(dir) → Graph` before anything can test linking, or gap 7.
+3. **Two-pass resolution** (gap 2) — invasive rewrite of the core walk. Everything above is cheaper; do this after.
+4. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all?
+5. **MCP wrapper** — serve the graph to agents once coverage is trustworthy.
 
 Still worth measuring, on a real repo: what fraction of uses resolve, what fraction of call sites resolve, and how often two same-named methods collide within one file. The last decides whether gap 1's ignored receiver needs revisiting.
 
