@@ -1,4 +1,3 @@
-import { parse } from "@typescript-eslint/typescript-estree";
 import type { Binding, Kind, Scope, Results, Use } from "./types";
 import { TSESTree } from "@typescript-eslint/typescript-estree";
 import { resolve, dirname } from "path";
@@ -26,7 +25,7 @@ function makeBinding(
     varType = "",
 ): Binding {
     return {
-        name: idNode.name,
+        name: idNode.name ?? String(idNode.value),
         line: idNode.loc?.start.line ?? -1,
         start: idNode.range?.[0] ?? -1,
         varType,
@@ -40,7 +39,7 @@ function makeBinding(
 // Build a Use from an Identifier-like node.
 function makeUse(idNode: any): Use {
     return {
-        name: idNode.name || idNode.value,
+        name: idNode.name || String(idNode.value),
         line: idNode.loc?.start.line ?? -1,
         start: idNode.range?.[0] ?? -1,
         file: currentFile,
@@ -172,6 +171,21 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         
     }
 
+
+    // { a: b } — an object literal property. A non-computed key is a label,
+    // not a reference: the `a` names the property, so walking it would resolve
+    // to any variable that happens to also be called `a` and record a use that
+    // isn't in the source. Shorthand { z } is the same problem twice over —
+    // key and value are separate nodes at the same offset, so `z` got two
+    // identical uses. Only a computed key, { [k]: v }, really does read a
+    // variable. Same computed/non-computed split as MethodDefinition's key
+    // and a MemberExpression's property.
+    if (node.type === "Property") {
+        if (node.computed) walkVariables(node.key, results, stack);
+        walkVariables(node.value, results, stack);
+        return;
+    }
+
     if (node.type === "ReturnStatement") {
         const previous = inReturn;
         inReturn = true;
@@ -266,12 +280,19 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     */
 
     if (node.type === "CallExpression") {
+        let calleeName: string | undefined;
         if (node.callee.type === "Identifier") {
-            const calleeName = node.callee.name;
-            let calledFunc : Binding | undefined;
+            // Plain call ==> the name is at node.callee.name
+            calleeName = node.callee.name;
+        } else if (node.callee.type === "MemberExpression" && !node.callee.computed) {
+            // method (dotted) call ==> the name is at node.callee.property.name
+            calleeName = node.callee.property.name;
+        }
+
+        if (calleeName !== undefined) {
+            let calledFunc: Binding | undefined;
             for (let i = stack.length - 1; i >= 0; i--) {
-                // the function that is called:
-                calledFunc = stack[i]?.declarations.find((d : Binding) => d.name === calleeName);
+                calledFunc = stack[i]?.declarations.find((d: Binding) => d.name === calleeName);
                 if (calledFunc) break;
             }
 
@@ -283,9 +304,9 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
                 if (arg) walkVariables(arg, results, stack);   // guard: fewer args than params
                 currentFeedTarget = save;
             }
-      
+
             walkVariables(node.callee, results, stack);
-            return; 
+            return;
         }
     }
 
@@ -300,18 +321,44 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
 
     // try {} catch (err) {} — the catch param (optional since ES2019)
     if (node.type === "CatchClause" && node.param) {
-        collectPatternNames(node.param, results.declarations, "catch");
+        // collectPatternNames already pushes when it comes across an identifier; no need
+        // to push additionally here. push to the stack instead of results.declarations list.
+        collectPatternNames(node.param, stack[stack.length - 1]!.declarations, "catch");
     }
 
     // class Ranker {} — the class name
     if (node.type === "ClassDeclaration" && node.id) {
-        results.declarations.push(makeBinding(node.id, "declaration", "class"));
+        stack[stack.length - 1]!.declarations.push(makeBinding(node.id, "declaration", "class"));
     }
 
-    // score(result) {} — the method name; its params are picked up when
-    // recursion reaches the method's FunctionExpression value
+    // score(result) {} — the name lives on node.key, the params on node.value.
+    // That value is an anonymous FunctionExpression (id is always null for a
+    // method), so the function branch can't name it from node.id; for anonymous
+    // functions it falls back to currentFeedTarget instead. Point that at the
+    // binding we just made and walk the value ourselves, so the params (and,
+    // via currentFunction, the returns) land on the method. Same
+    // save/set/walk/restore shape VariableDeclarator uses for `const f = () => {}`.
     if (node.type === "MethodDefinition") {
-        results.declarations.push(makeBinding(node.key, "declaration", "function"));
+        // class R { [name]() {} } — a computed key is an expression, not the
+        // method's name. Binding it would declare something called "name",
+        // which is the variable being read, not the method it names (and the
+        // real name isn't knowable until runtime). So walk the key as an
+        // ordinary expression instead, letting `name` resolve to its own
+        // declaration and record a use there.
+        if (node.computed) {
+            walkVariables(node.key, results, stack);
+            walkVariables(node.value, results, stack);
+            return;
+        }
+
+        const methodBinding = makeBinding(node.key, "declaration", "function");
+        stack[stack.length - 1]?.declarations.push(methodBinding);
+
+        const previous = currentFeedTarget; // save the old value
+        currentFeedTarget = methodBinding; // set
+        walkVariables(node.value, results, stack); // walk 
+        currentFeedTarget = previous; // restore
+        return; // node.key is the declaration itself, nothing to resolve there.
     }
 
     // TS-only declarations: enum Mode, interface Config, type Result
@@ -320,7 +367,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         node.type === "TSInterfaceDeclaration" ||
         node.type === "TSTypeAliasDeclaration"
     ) {
-        results.declarations.push(makeBinding(node.id, "declaration", "type"));
+       stack[stack.length - 1]!.declarations.push(makeBinding(node.id, "declaration", "type"));
     }
 
     // Don't recurse into TypeAnnotation since it's just noise
