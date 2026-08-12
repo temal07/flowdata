@@ -68,6 +68,18 @@ test("a method call traces its argument into the method's parameter", () => {
         .toContain("z -> p");
 });
 
+// Gap 3 — classes, methods, and catch params used to push straight into
+// `results.declarations` instead of onto the scope stack, so they became nodes
+// no use could ever resolve against. They now push onto the current scope like
+// every other binding.
+test("a class is resolvable as a use", () => {
+    expect(edges(`class R {} const r = R;`)).toEqual(["R -> r"]);
+});
+
+test("a catch parameter is resolvable as a use", () => {
+    expect(edges(`try {} catch (err) { const e = err; }`)).toEqual(["err -> e"]);
+});
+
 // TS type declarations are the third member of this family, but they need a
 // decision first: `TSTypeAnnotation` is skipped on purpose (engine.ts) to keep
 // annotations out of the graph. Putting types on the scope stack alone won't
@@ -137,13 +149,4 @@ test.todo("a forward reference resolves to the later declaration", () => {
 
 test.todo("a loop body sees the loop variable", () => {
     expect(edges(`for (let i = 0; i < 3; i++) { const b = i; }`)).toEqual(["i -> b"]);
-});
-
-// Gap 3 — bindings that bypass the scope stack can never be resolved against.
-test.todo("a class is resolvable as a use", () => {
-    expect(edges(`class R {} const r = R;`)).toEqual(["R -> r"]);
-});
-
-test.todo("a catch parameter is resolvable as a use", () => {
-    expect(edges(`try {} catch (err) { const e = err; }`)).toEqual(["err -> e"]);
 });
