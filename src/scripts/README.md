@@ -12,9 +12,10 @@ If you're new to this codebase, read the files in this order:
 | --- | --- | --- |
 | 1 | [`types.ts`](./types.ts) | The data model (`Binding`, `Use`, `Scope`, `Results`). Read this first — everything else is built on it. |
 | 2 | [`engine.ts`](./engine.ts) | The AST walker. One file in, one `Results` out. This is where the actual analysis happens. |
-| 3 | [`flow.ts`](./flow.ts) | The `flow` CLI — walks a whole project, links files together, builds the graph, serves the viewer. |
+| 3 | [`analyse.ts`](./analyse.ts) | The project-wide pipeline: walk every file, link imports across files, flatten to nodes, turn `feeds` into edges. A directory path in, a `Graph` out — no I/O beyond reading source. |
+| 4 | [`flow.ts`](./flow.ts) | The `flow` CLI — parses argv, calls `analyse()`, writes `graph.json`, serves the viewer and opens it. |
 | — | [`tree.ts`](./tree.ts) | Dev utility: dumps the raw parser AST for a fixture file. Useful when adding a new node-type case to `engine.ts`. |
-| — | [`debug.ts`](./debug.ts) | Dev utility: `flow.ts`'s pipeline (minus the CLI/server/viewer bits) as a plain script, for quick JSON dumps while iterating. |
+| — | [`debug.ts`](./debug.ts) | Dev utility: runs `analyse()` against `src/tests` and dumps the graph as JSON, no CLI/server/viewer. For quick inspection while iterating on `engine.ts`. |
 
 ## Mental model
 
@@ -31,7 +32,7 @@ If you're new to this codebase, read the files in this order:
                               ▼
                      Results { declarations: Binding[] }
                               │
-              (flow.ts, across every file in the project)
+            (analyse.ts, across every file in the project)
                               │
         ┌─────────────────────┼─────────────────────────┐
         ▼                     ▼                          ▼
