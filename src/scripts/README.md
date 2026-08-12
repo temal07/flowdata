@@ -70,7 +70,7 @@ start}` of another declaration that the value flows into — e.g. in
    b = x }`) from misattributing `x`'s flow to `a` instead of `b`.
 
 See the doc comment at the top of [`engine.ts`](./engine.ts) for the full
-per-node-type walkthrough, and [`../../NOTES.md`](../../NOTES.md) for
+per-node-type walkthrough, and [`NOTES.md`](../mds/NOTES.md) for
 current status and known limitations (intraprocedural-only flow,
 destructuring-target heuristics, JS-only cross-file linking gap, etc).
 
