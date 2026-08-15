@@ -149,9 +149,52 @@ test("an unresolvable name does not block later deferred uses", () => {
     expect(edges(`foo(); const a = b; const b = 2;`)).toEqual(["b -> a"]);
 });
 
-// Gap 5 — only declaration initializers set a flow target.
-test.todo("reassignment produces an edge", () => {
+// Gap 5 — only declaration initializers used to set a flow target, so a bare
+// `x = foo()` produced nothing. Both identifiers always resolved; what was
+// missing was the `feeds` stamp. The AssignmentExpression branch now points
+// currentFeedTargets at the thing being written before walking the right side.
+test("reassignment produces an edge", () => {
     expect(edges(`function foo(){return 1} let x; x = foo();`)).toEqual(["foo -> x"]);
+});
+
+test("a compound assignment feeds its target", () => {
+    expect(edges(`function foo(){return 1} let x = 0; x += foo();`)).toEqual(["foo -> x"]);
+});
+
+// The guard on `left` being walked before the target is set. Walking it after
+// would stamp the write as flowing into itself.
+test("an assignment does not feed its target into itself", () => {
+    expect(edges(`let x; x = 1;`)).toEqual([]);
+});
+
+// A member expression has no binding to point at, so no edge is invented —
+// same rule as gap 1's unresolvable method calls.
+test("assigning to a property invents no edge", () => {
+    expect(edges(`function foo(){return 1} const o = {}; o.p = foo();`)).toEqual([]);
+});
+
+// The guard on save/restore. An early version wiped currentFeedTargets to []
+// instead of restoring it, which silently dropped the enclosing target for
+// everything walked after the assignment — `bar -> a` was the casualty.
+// toContain, because the incidental `x -> a` and `foo -> x` are not the point.
+test("an assignment restores the enclosing feed target", () => {
+    expect(edges(`function foo(){return 1} function bar(){return 2} let x; const a = (x = foo()) + bar();`))
+        .toContain("bar -> a");
+});
+
+// Chained assignment produces the hops rather than a direct `foo -> x`, which
+// query.ts traverses transitively. Documented, not accidental.
+test("a chained assignment links through each target", () => {
+    expect(edges(`function foo(){return 1} let x; let y; x = y = foo();`))
+        .toEqual(["foo -> y", "y -> x"]);
+});
+
+// When the left side can't be named, the enclosing target passes through
+// rather than being cleared: not knowing where the write lands says nothing
+// about where the expression's own value goes. Fails if that falls back to [].
+test("an unnameable assignment target keeps the enclosing feed target", () => {
+    expect(edges(`function foo(){return 1} const a = (undeclared = foo());`))
+        .toContain("foo -> a");
 });
 
 // Gap 6 — a non-computed property key is a label, not a reference. Shorthand
@@ -179,6 +222,15 @@ test("a computed property key still resolves as a use", () => {
 // flow.ts and a fixture directory.
 
 
- // ==== TODOs ====
+ // ==== Untested gaps ====
 
-// Gap 5 is the only one left — see `reassignment produces an edge` above.
+// No `.todo` left: every gap that collectVariables can express now has a test.
+// The two that remain open aren't testable from here.
+//
+// Gap 7 (imports assume `.ts`) is cross-file — see the note above.
+//
+// Gap 8 (a use resolves to an outer declaration that a later inner one
+// shadows) is testable in principle, but a test written now would pin the
+// *wrong* answer. `useCounts` counts by name, and both declarations are called
+// `x`, so distinguishing them needs an assertion on `start` offsets. Write it
+// with the fix, not before.
