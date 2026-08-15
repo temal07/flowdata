@@ -1,6 +1,7 @@
 import { test, expect } from 'bun:test';
 import { parse } from "@typescript-eslint/typescript-estree"
 import { collectVariables } from '../scripts/engine';
+import { isProjectSource } from '../scripts/analyse';
 
 // A function to flatten the messy output into the 
 // thing you want to assert on
@@ -242,10 +243,82 @@ test("a method call still records a use of the method name", () => {
         .toContain("score -> out");
 });
 
+// Gap 12 — the same rule a fifth time. TSInterfaceDeclaration pushed its name
+// and then fell through to the generic recursion, which walked the body and
+// looked every member key up as a variable. Interfaces and type aliases are
+// pure type space, so they now return outright; `useCounts` rather than
+// `edges` because the damage is a phantom *use*, with or without an edge.
+test("an interface member does not use a same-named variable", () => {
+    expect(useCounts(`const name = "x"; interface R { name: string; line: number }`).name).toBe(0);
+});
+
+test("a type alias member does not use a same-named variable", () => {
+    expect(useCounts(`const name = "x"; type T = { name: string }`).name).toBe(0);
+});
+
+// Enums are the exception, and the reason the branch had to split rather than
+// blanket-return: a member's *name* is a label, but its *initializer* is a
+// real value expression. Getting these two backwards — walking `member.id`
+// instead of `member.initializer` — passes every other test in this file.
+test("an enum member name does not use a same-named variable", () => {
+    expect(useCounts(`const A = 9; enum E { A } const z = A;`).A).toBe(1);
+});
+
+test("an enum member initializer still resolves", () => {
+    expect(useCounts(`const SIZE = 5; enum E { A = SIZE }`).SIZE).toBe(1);
+});
+
 // Gap 7 (import resolution assumes `.ts`) is cross-file, so it can't be tested
 // through collectVariables. It needs the `analyze(dir)` extraction out of
 // flow.ts and a fixture directory.
 
+
+// Gap 11 — a use of `console` was counted as a resolution failure, which put a
+// permanent floor under the rate and hid real regressions behind it. Names no
+// project declares now land in their own `external` bucket, so `unresolved` is
+// the only number that moves when coverage actually changes.
+function lookups(source: string) {
+    const ast = parse(source, { loc: true, range: true });
+    return collectVariables(ast as any, "/test.ts").lookups;
+}
+
+test("a global is counted as external, not as a failed lookup", () => {
+    const l = lookups(`const x = 1; console.log(x);`);
+    expect(l.unresolved).toBe(0);
+    expect(l.external).toBeGreaterThan(0);
+});
+
+test("a name the project should have declared still counts as unresolved", () => {
+    const l = lookups(`const a = definitelyNotAGlobal;`);
+    expect(l.unresolved).toBe(1);
+    expect(l.external).toBe(0);
+});
+
+// A declaration in the source shadows the globals list — the set is only
+// consulted after the scope chain has already come up empty, so it can never
+// mask a real binding.
+test("a declared name never falls through to the globals list", () => {
+    const l = lookups(`function map(f){ return f } const a = map(1);`);
+    expect(l.external).toBe(0);
+});
+
+// Gap 10 — IGNORED_DIRS covers the usual homes for vendored code, but a
+// checked-in bundle can live anywhere: src/viewer/lib/cytoscape.min.js was
+// 8,621 of this repo's 8,876 nodes and swamped every whole-project number.
+test("a minified bundle is not project source", () => {
+    expect(isProjectSource("src/viewer/lib/cytoscape.min.js")).toBe(false);
+    expect(isProjectSource("dist/app.min.mjs")).toBe(false);
+});
+
+test("ordinary source under lib/ is still project source", () => {
+    expect(isProjectSource("src/viewer/lib/helpers.js")).toBe(true);
+    expect(isProjectSource("src/scripts/engine.ts")).toBe(true);
+});
+
+test("vendored directories and ambient declarations stay excluded", () => {
+    expect(isProjectSource("node_modules/foo/index.js")).toBe(false);
+    expect(isProjectSource("src/types/global.d.ts")).toBe(false);
+});
 
  // ==== Untested gaps ====
 
