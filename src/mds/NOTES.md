@@ -65,6 +65,16 @@ The call-site branch used to be gated on `node.callee.type === "Identifier"`, so
 Three things this deliberately does **not** do:
 
 - **The receiver is ignored.** Resolution is by method name only — `b.score(z)` never checks what `b` is. With two same-named methods in scope, `.find()` takes the first, which can be the wrong class. Decided (August 9, 2026) to keep it: the alternative is real type inference, and without name-only matching there are no method edges at all. Revisit if measurement says the collision rate is high.
+
+  **August 15 2026 — the measurement is starting to arrive, and it's worse than "two same-named methods."** The name-only match is against *the whole scope chain*, not against methods, so a built-in call can bind to any local declaration that happens to share its name:
+
+  ```ts
+  function file(n){ return n }
+  const p = "x";
+  const out = Bun.file(p);      // edges: file -> out, p -> n  — both fabricated
+  ```
+
+  `Bun.file` has nothing to do with the local `file`, and `p` never reaches `n`. This was always true but was buried under gap 9's noise; with reads fixed, unresolved method names (`push` 22, `log` 17, `map` 7 on this repo) are the dominant remaining phantom source. Unlike a missing edge, this one actively misleads `query.ts`. Two cheap mitigations short of type inference: require the match to be `kind === "function"` *and* declared as a method, or keep a known-globals set (gap 11) so `Bun`/`console` receivers are recognised as external and their calls left unresolved.
 - **Computed forms are skipped.** `r[k](z)` and `class R { [name]() {} }` have no statically-known name — the identifier there names a *variable holding* the name, so reading it would silently produce a wrong answer. Both bail out on `computed === true`.
 - **Unresolvable member calls now emit no argument edge.** Previously `a.b.c(z)` fell through and `z` picked up the ambient feed target, giving a coarse `z → out`. Now the branch fires, finds nothing, and sets the target to null. This matches how unresolved *plain* calls have always behaved, but it does drop argument edges for object-literal methods and built-ins (`arr.map(fn)`, `str.split(sep)`).
 
@@ -171,6 +181,8 @@ Fix was a `Property` branch that walks the key only when `computed`, then always
 
 Same computed/non-computed split as gap 1's `MemberExpression` callee and `MethodDefinition`'s key. Three instances of one rule: **when `computed` is false the identifier is a name — read it, don't resolve it; when true it's a variable — resolve it, don't read it.**
 
+**Three instances, but there is a fourth the rule was never applied to** — reading a member expression, `o.p`, as opposed to calling one. See gap 9. Worth knowing that this entry reading as fully RESOLVED is what made that easy to miss: the rule was stated correctly here and then only enforced in three of the four places it holds.
+
 ### 7. Import resolution assumes `.ts`
 
 The resolver appends `.ts` unconditionally, so pure-JS projects extract fine but never link. Directory imports (`./foo` → `./foo/index.ts`) and explicit extensions (`./foo.js` → `./foo.js.ts`) also fail. Fix: try a candidate list of extensions and index files.
@@ -207,17 +219,81 @@ The graph would then assert both "this call is the inner `foo`" and "its argumen
 
 So: do the two together, as one change, or not at all. Worth measuring the frequency of inner-hoisted-function shadowing on a real repo first — if it's rare, this stays cheap to ignore.
 
+### 9. Member expression properties are treated as references — ✅ RESOLVED
+
+**This is gap 6, only half-fixed.** That entry established the rule — *when `computed` is false the identifier is a name; read it, don't resolve it* — and applied it to object literal keys, a `MemberExpression` **callee**, and a `MethodDefinition` key. It was never applied to the ordinary case of *reading* a member expression, which has no branch at all and so falls through to the generic recursion. `o.p` therefore looks up `p` as if it were a variable.
+
+```ts
+const declarations = 9;
+const node = { declarations: 1 };
+const x = node.declarations;     // edges: declarations -> x, node -> x
+//             ^ the property is a label; `declarations -> x` is invented
+```
+
+Same damage as gap 6's third case (`const o = { a: b }` inventing a use of `a`), and more common, because member access is everywhere while shadowing object keys are rare.
+
+**Measured on this repo, August 15 2026.** Across `src/scripts` (8 files, 215 nodes, 148 edges) only **56.8%** of uses resolved — 551 deferred lookups over 109 distinct names. Ranked, they are almost entirely property names:
+
+```
+  31  name        23  declarations    17  start
+  31  type        22  push            13  kind
+  26  length      21  console         12  file
+```
+
+`console` and `Bun` are real globals (gap 11). Everything else is `node.type`, `arr.push`, `binding.declarations`. And note what those names are: `name`, `type`, `start`, `kind`, `file`, `declarations` are all variables in `engine.ts` itself, so the graph of this repo almost certainly contains phantom edges today.
+
+Fixed with a `MemberExpression` branch shaped exactly like the existing `Property` one: always walk `object`, walk `property` only when `computed`, return. Unlike most entries here it *removes* wrong edges rather than adding missing ones.
+
+**The five-line version is a trap, and it passes the whole suite.** A method call's edge comes from resolving the callee's *property* — `score` in `r.score(z)` — which is precisely what the new branch skips. `CallExpression` used to end by handing `node.callee` to the generic walk, and that walk is what produced `score -> out`. Adding the branch alone deletes that edge:
+
+```ts
+const out = r.score(z);
+// before: R -> r, r -> out, score -> out, z -> q
+// naive:  R -> r, r -> out,               z -> q     ← gone, 26/26 tests still green
+```
+
+So the fix is two parts: the branch, plus `CallExpression` walking `callee.object` and `callee.property` itself instead of delegating. Walking the property directly bypasses the new branch and lands in the Identifier branch, which is what records the use. The computed-callee case (`r[k](z)`) needs nothing — `calleeName` stays undefined, so the branch never fires and the generic loop hands the member expression to the new branch, which walks both children because `computed` is true.
+
+**The resulting asymmetry is deliberate.** `o.p` read → the property is not resolved, because there is nothing to resolve *to*: the engine never declares object properties or class fields, so any match would be coincidence. `o.m()` call → the property *is* resolved by name, because gap 1 decided exactly that, and without it there are no method edges at all. Same syntax, two treatments, both on purpose.
+
+**Measured after the fix, August 15 2026**, same command as before, on `src/scripts`:
+
+| | before | after |
+| --- | --- | --- |
+| unresolved lookups | 551 | **257** |
+| resolution rate | 56.8% | **73.6%** |
+| edges | 148 | **144** |
+
+The four vanished edges are the phantoms. What survives in the unresolved pile splits cleanly in two, and neither is a walker bug: real globals (`console` 21, `Bun` 13, `process` 12 — that's gap 11), and built-in *method* names (`push` 22, `log` 17, `map` 7) which are looked up on purpose under gap 1's name-only rule and simply don't exist in the project.
+
+### 10. Vendored and minified files aren't excluded
+
+`IGNORED_DIRS` covers `node_modules`, `dist`, `vendor` and friends, but `src/viewer/lib/cytoscape.min.js` sits under none of them. So a full run on this repo produced **8,876 nodes of which 8,621 came from that one file** — 97% of the graph is a dependency nobody wants to trace, and it swamps every measurement taken from the whole project (the 42 same-name function collisions counted in the first run were all inside it).
+
+Filtering on directory name won't generalise — `lib/` is a normal source directory in plenty of projects. The property that actually matters is that the file is minified, so `.min.js` / `.min.mjs` is the better rule, mirroring how `.d.ts` is already excluded for having no runtime values. A very long maximum line length would be the more general version of the same test.
+
+### 11. Unresolvable globals are counted as resolution failures
+
+`console`, `Bun`, `process`, `JSON`, `Math` and friends are never declared in the source, so every use of them defers, fails the retry, and lands in the same bucket as a genuine engine failure. In the measurement above `console` alone accounts for 21 of 551, and `Bun` 13.
+
+That makes the resolution rate read worse than it is and, more importantly, hides the real failures behind a floor of permanent ones. Wanted: a known-globals set, and a third category alongside resolved/unresolved so "the engine could not do this" stays separable from "there is nothing to resolve." Cheap, and it's what makes the resolution rate usable as a regression signal.
+
 ---
 
 ## Next up
 
-1. **Cross-file test harness** — now the smallest real gap. The blocker named here is gone: `analyse(dir) → Graph` exists in `analyse.ts`, so there is a function to call. The fixture directory and the tests themselves still aren't written, and every engine test to date runs through `collectVariables` on a single string — nothing exercises linking. This is what unblocks gap 7.
-2. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all?
-3. **Shadowing + call-site resolution together** (gap 8, and the receiver half of gap 1) — the identifier half is a one-line change that already measures clean; it's the `CallExpression` lookup that has to move with it. Measure the frequency first.
-4. **Destructuring assignment** (remainder of gap 5) — `[a, b] = foo()` needs a lookup-per-leaf sibling to `collectPatternNames`. Small, but rare enough in real code that it can wait for evidence.
-5. **MCP wrapper** — serve the graph to agents once coverage is trustworthy.
+1. **Vendored/minified exclusion** (gap 10) — one line in `isProjectSource`. Smallest thing here, and until it lands every whole-repo measurement is 97% cytoscape.
+2. **Globals as a third category** (gap 11) — makes the resolution rate mean something, which is what turns it into a regression signal for everything below. It also does double duty: knowing `Bun` and `console` are external is what lets a `Bun.file()` call stop binding to a local `file` (see gap 1's August 15 note).
+3. **Method-name binding** (the receiver half of gap 1) — now the dominant source of *wrong* edges, since gap 9 cleared the noise that hid it. Cheaper than full type inference: restrict the name-only match to method declarations, and treat known-global receivers as external.
+4. **Cross-file test harness** — the blocker named here is gone: `analyse(dir) → Graph` exists in `analyse.ts`, so there is a function to call. The fixture directory and the tests themselves still aren't written, and every engine test to date runs `collectVariables` on a single string — nothing exercises linking. This is what unblocks gap 7.
+5. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all?
+6. **Shadowing + call-site resolution together** (gap 8, and the receiver half of gap 1) — the identifier half is a one-line change that already measures clean; it's the `CallExpression` lookup that has to move with it.
+7. **Destructuring assignment** (remainder of gap 5) — `[a, b] = foo()` needs a lookup-per-leaf sibling to `collectPatternNames`. Small, but rare enough in real code that it can wait for evidence.
+8. **MCP wrapper** — serve the graph to agents once coverage is trustworthy.
 
-Still worth measuring, on a real repo: what fraction of uses resolve, what fraction of call sites resolve, and how often two same-named methods collide within one file. The last decides whether gap 1's ignored receiver needs revisiting. The first is nearly free now — `collectVariables` already counts the uses that survive the retry unresolved; making that a `PendingUse[]` instead of a number would name them too.
+**Measured August 15 2026**, by calling `analyse()` directly and accumulating the trace hook's post-retry unresolved count. On `src/scripts` — 8 files, 215 nodes, 148 edges, 31 ms — **56.8% of uses resolved**. On the whole repo, 13 files and 8,876 nodes, but see gap 10 before reading anything into that.
+
+The measurement earned its keep immediately: it was run to decide between the test harness and gap 8, and instead surfaced gap 9, which neither was. Worth repeating after gaps 9-11 land, and worth pointing at a repo that isn't this one. Two numbers still unmeasured: what fraction of *call sites* resolve, and how often two same-named methods collide in one file — the second is what decides whether gap 1's ignored receiver needs revisiting, and it can't be read off this repo until gap 10 stops cytoscape from dominating the count.
 
 ---
 
