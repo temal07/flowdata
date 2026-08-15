@@ -106,6 +106,21 @@ test("a nested pattern binds its leaves, not the intermediate key", () => {
         .toEqual(["foo -> b", "foo -> c"]);
 });
 
+// Loop traversal order — not a hoisting gap, despite looking like one. The
+// generic walk recurses over `Object.values(node)`, and typescript-estree
+// emits properties alphabetically, so `body` came before `init`/`left`/`test`/
+// `update` and the body was walked before the loop variable existed. The loop
+// statements now name their children in source order (engine.ts). The `for...of`
+// case is the guard on `left` being walked before `body`, and on `right` too.
+test("a loop body sees the loop variable", () => {
+    expect(edges(`for (let i = 0; i < 3; i++) { const b = i; }`)).toEqual(["i -> b"]);
+});
+
+test("a for...of body sees the loop variable", () => {
+    expect(edges(`const xs = [1]; for (const x of xs) { const b = x; }`))
+        .toEqual(["x -> b"]);
+});
+
 // Gap 5 — only declaration initializers set a flow target.
 test.todo("reassignment produces an edge", () => {
     expect(edges(`function foo(){return 1} let x; x = foo();`)).toEqual(["foo -> x"]);
@@ -145,8 +160,4 @@ test.todo("a call above a hoisted function still records a use", () => {
 
 test.todo("a forward reference resolves to the later declaration", () => {
     expect(edges(`const a = b; const b = 2;`)).toEqual(["b -> a"]);
-});
-
-test.todo("a loop body sees the loop variable", () => {
-    expect(edges(`for (let i = 0; i < 3; i++) { const b = i; }`)).toEqual(["i -> b"]);
 });

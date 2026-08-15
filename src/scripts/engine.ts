@@ -179,6 +179,39 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         return;   // declarators are walked above; don't let the generic loop repeat them
     }
 
+    // Loops: walk the children in *source* order rather than the parser's.
+    //
+    // The generic recursion at the bottom of this function iterates
+    // `Object.values(node)`, and typescript-estree emits a node's properties
+    // alphabetically — so `body` comes before `init`, `left`, `test` and
+    // `update`. The walker was therefore visiting a loop's body before the
+    // loop's own variable had been declared, and
+    // `for (let i = 0; i < 3; i++) { const b = i; }` dropped the use of `i`
+    // inside the body while still resolving the two in `i < 3` and `i++`
+    // (those are walked after `init`, so by then it exists). Naming the
+    // children explicitly is the same move VariableDeclaration and
+    // MethodDefinition already make to control their own traversal.
+    //
+    // Note this is *not* the hoisting gap: nothing here is used before it is
+    // declared in the source, only before the walker happened to reach it.
+    if (node.type === "ForStatement") {
+        if (node.init) walkVariables(node.init, results, stack);
+        if (node.test) walkVariables(node.test, results, stack);
+        if (node.update) walkVariables(node.update, results, stack);
+        walkVariables(node.body, results, stack);
+        return;
+    }
+
+    // for (const x of xs) / for (const k in o) — `left` declares the loop
+    // variable and `right` is the iterable being read; both have to be walked
+    // before the body that uses them.
+    if (node.type === "ForOfStatement" || node.type === "ForInStatement") {
+        walkVariables(node.left, results, stack);
+        walkVariables(node.right, results, stack);
+        walkVariables(node.body, results, stack);
+        return;
+    }
+
     // A bare expression statement — e.g. `rank(query)` — references variables
     // without declaring anything, so its identifiers are all uses.
     if (node.type === "ExpressionStatement") {
