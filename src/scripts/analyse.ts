@@ -65,7 +65,14 @@ function nodeId(file: string, start: number): string {
   return `${file}:${start}`;
 }
 
-export async function analyse(projectDir: string): Promise<{ graph: Graph, filesAnalysed: number }> {
+export async function analyse(projectDir: string): Promise<{
+  graph: Graph,
+  filesAnalysed: number,
+  /** Every identifier lookup across every file, bucketed. `unresolved` is the
+   *  one to watch: `external` is names no project declares (see KNOWN_GLOBALS
+   *  in engine.ts), so only this number moving means coverage changed. */
+  lookups: { resolved: number, unresolved: number, external: number },
+}> {
   // keep each file's source around so edge clicks can show the actual code
   // at the use site, not just a file:line reference.
   const fileTexts: Record<string, string> = {};
@@ -173,5 +180,16 @@ export async function analyse(projectDir: string): Promise<{ graph: Graph, files
   }
   graph.edges.push(...edgesByKey.values());
 
-  return {graph, filesAnalysed: Object.keys(treeResults).length};
+  // Roll every file's lookup tally into one. Without this the counts stay
+  // buried in each file's Results and the only way to read them is to attach
+  // a trace hook and scrape the phase line, which is no way to watch a number
+  // you want to treat as a regression signal.
+  const lookups = { resolved: 0, unresolved: 0, external: 0 };
+  for (const fileResults of Object.values(treeResults)) {
+    lookups.resolved += fileResults.lookups.resolved;
+    lookups.unresolved += fileResults.lookups.unresolved;
+    lookups.external += fileResults.lookups.external;
+  }
+
+  return {graph, filesAnalysed: Object.keys(treeResults).length, lookups};
 }
