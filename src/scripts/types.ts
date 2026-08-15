@@ -135,6 +135,23 @@ export type Scope = {
  *  with its uses already attached. Produced by `collectVariables`. */
 export interface Results {
     declarations: Binding[];
+    /** How the walk's identifier lookups ended up. Kept per file so the
+     *  resolution rate is a number the tests and `analyse` can read directly,
+     *  rather than something only reconstructable through the trace hook.
+     *
+     *  The `external` bucket is the point: a use of `console` is not a failure
+     *  of this engine, it's a name that was never going to be in the source.
+     *  Counting it as unresolved put a permanent floor under the rate and hid
+     *  real regressions behind it. */
+    lookups: {
+        /** Matched a declaration — immediately, or on the deferred retry. */
+        resolved: number;
+        /** Matched nothing, and the name isn't a known global: a genuine miss. */
+        unresolved: number;
+        /** Matched nothing because it names a runtime global or built-in
+         *  method (`console`, `Bun`, `push`) that this project never declares. */
+        external: number;
+    };
 }
 
 /**
