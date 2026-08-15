@@ -46,6 +46,25 @@ export function isProjectSource(relativePath: string): boolean {
 }
 
 /**
+ * Whether to parse this file as JSX.
+ *
+ * The glob has always matched `.tsx` and `.jsx`, but the parser was never told
+ * about them, so every JSX file in a project failed — `<div>` was read as a
+ * less-than and the errors landed several tokens later ("Unterminated regular
+ * expression literal"), pointing nowhere near the cause. On Hono that was 21
+ * files, and every parse failure in the repo was one of them.
+ *
+ * `.ts` is the one extension that must stay false: there `<T>expr` is a type
+ * assertion, and turning JSX on would reinterpret it as an unclosed element.
+ * That ambiguity is exactly why TypeScript splits `.ts` from `.tsx` in the
+ * first place. Everything else the glob matches can carry JSX — `.js` files
+ * routinely do — and none of them have the type-assertion syntax to lose.
+ */
+export function allowsJsx(path: string): boolean {
+    return !path.endsWith(".ts");
+}
+
+/**
  * Longest snippet stored per edge occurrence. A minified file is a handful
  * of lines hundreds of kilobytes wide (cytoscape.min.js: 33 lines, longest
  * 229k chars); storing one verbatim per edge is what turned a 9-file graph
@@ -72,6 +91,11 @@ export async function analyse(projectDir: string): Promise<{
    *  one to watch: `external` is names no project declares (see KNOWN_GLOBALS
    *  in engine.ts), so only this number moving means coverage changed. */
   lookups: { resolved: number, unresolved: number, external: number },
+  /** Files matched by the glob that could not be parsed, with the parser's
+   *  first line of complaint. Empty on a clean run. Each entry is a file
+   *  missing from the graph, so a consumer that cares about completeness has
+   *  to look here — nothing else signals the loss. */
+  skipped: { file: string, reason: string }[],
 }> {
   // keep each file's source around so edge clicks can show the actual code
   // at the use site, not just a file:line reference.
@@ -92,17 +116,33 @@ export async function analyse(projectDir: string): Promise<{
 
   // Step 1: parse + walk every file in the project.
   const treeResults: Record<string, Results> = {};
+  const skipped: { file: string, reason: string }[] = [];
 
   for await (const file of glob.scan(projectDir)) {
-    // disregards non-project source files 
+    // disregards non-project source files
     // specified in the isProjectSource function
     if (!isProjectSource(file)) continue;
     // resolves the absolute path of the file
     const absolutePath = resolve(projectDir, file);
     // reads the file's text content
     const code = await Bun.file(absolutePath).text();
-    // parses the file's code into an AST
-    const tree = parse(code, { loc: true, range: true });
+
+    // Parse, and survive files that don't. A project you didn't write will
+    // contain something this parser can't handle — a syntax level newer than
+    // the installed version, a file the glob shouldn't have matched, a
+    // half-finished edit. Letting that throw meant one bad file produced no
+    // graph at all rather than a graph missing one file, which is the
+    // difference between a degraded result and no result. Skips are collected
+    // and returned rather than swallowed: an unanalysed file is a hole in the
+    // graph, and a hole nobody is told about is worse than one they are.
+    let tree;
+    try {
+      tree = parse(code, { loc: true, range: true, jsx: allowsJsx(absolutePath) });
+    } catch (error) {
+      skipped.push({ file: absolutePath, reason: String((error as Error).message).split("\n")[0]! });
+      continue;
+    }
+
     // collects the variables in the AST
     // and stores the results in the treeResults object
     // format: {"some path": Results}
@@ -191,5 +231,5 @@ export async function analyse(projectDir: string): Promise<{
     lookups.external += fileResults.lookups.external;
   }
 
-  return {graph, filesAnalysed: Object.keys(treeResults).length, lookups};
+  return {graph, filesAnalysed: Object.keys(treeResults).length, lookups, skipped};
 }
