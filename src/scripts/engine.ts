@@ -83,6 +83,51 @@ function trace(kind: string, detail: string, depthChange: 0 | 1 | -1 = 0): void 
     if (depthChange === 1) traceDepth++;
 }
 
+/**
+ * Names that no project declares and every project uses. A use of `console`
+ * failing to resolve is not the engine falling short — there was never
+ * anything to find. Lumping these in with real misses put a permanent floor
+ * under the resolution rate (on this repo `console` alone was 21 of 551) and
+ * hid regressions behind it, so they get counted as `external` instead.
+ *
+ * Built-in *method* names are in here too — `push`, `map`, `log`. Those reach
+ * the lookup because gap 1 resolves method calls by name, and nothing in a
+ * project declares `push`. Exported because that same set is half of gap 1's
+ * fix: knowing `Bun` is external is what should stop `Bun.file()` binding to
+ * a local function called `file`.
+ *
+ * Deliberately not exhaustive, and deliberately not a correctness mechanism —
+ * a name missing from here is counted as unresolved, which is the safe error.
+ * Anything genuinely declared in the source still shadows this: the set is
+ * only consulted after the scope chain has already come up empty.
+ */
+export const KNOWN_GLOBALS = new Set([
+    // Runtime objects and namespaces
+    "globalThis", "console", "process", "Bun", "window", "document", "navigator",
+    "performance", "crypto", "localStorage", "sessionStorage", "fetch", "Buffer",
+    "require", "module", "exports", "__dirname", "__filename", "Intl",
+    // Constructors and namespaces from the language itself
+    "Object", "Array", "String", "Number", "Boolean", "Symbol", "BigInt", "Math",
+    "JSON", "Date", "RegExp", "Function", "Promise", "Map", "Set", "WeakMap",
+    "WeakSet", "Proxy", "Reflect", "ArrayBuffer", "DataView", "Error", "TypeError",
+    "RangeError", "SyntaxError", "ReferenceError", "URL", "URLSearchParams",
+    "Response", "Request", "Headers", "Blob", "File", "FormData", "AbortController",
+    "TextEncoder", "TextDecoder", "WebSocket", "Event", "CustomEvent",
+    // Free functions and values
+    "parseInt", "parseFloat", "isNaN", "isFinite", "structuredClone",
+    "setTimeout", "clearTimeout", "setInterval", "clearInterval", "queueMicrotask",
+    "encodeURIComponent", "decodeURIComponent", "NaN", "Infinity", "undefined",
+    // Built-in method names, reached via gap 1's name-only method resolution
+    "push", "pop", "shift", "unshift", "slice", "splice", "concat", "join",
+    "map", "filter", "reduce", "forEach", "find", "findIndex", "some", "every",
+    "sort", "reverse", "includes", "indexOf", "keys", "values", "entries",
+    "has", "get", "set", "add", "delete", "clear", "then", "catch", "finally",
+    "toString", "valueOf", "trim", "split", "replace", "match", "test", "exec",
+    "startsWith", "endsWith", "padStart", "padEnd", "repeat", "charAt",
+    "toLowerCase", "toUpperCase", "stringify", "parse", "log", "warn", "error",
+    "exit", "resolve", "reject", "all", "from", "of", "assign", "freeze",
+]);
+
 /** Innermost-scope-outward lookup of `name` or undefined if there is nothing binding to it */
 function lookup(name: string, chain: Scope[]): Binding | undefined {
     for (let i = chain.length - 1; i >= 0; i--) {
@@ -152,7 +197,7 @@ export function collectVariables(node: TSESTree.Node, file: string): Results {
     // reset so that the pending uses from one file does not
     // leak into another file.
     pendingUses = [];
-    const results: Results = { declarations: [] };
+    const results: Results = { declarations: [], lookups: { resolved: 0, unresolved: 0, external: 0 } };
     // A stack to know which scope we're in, so that 2 or more variables with
     // the same name can be found without ambiguity. Created fresh per call so
     // repeated invocations don't leak declarations/uses from earlier walks.
@@ -162,14 +207,17 @@ export function collectVariables(node: TSESTree.Node, file: string): Results {
     // Re-lookup: Every declaration is walked with pendingUses so it's 
     // time for pending uses to resolve.
 
-    let stillUnresolved = 0;
     for (const note of pendingUses) {
         const found = lookup(note.use.name, note.chain);
-        // Nothing binds this name even now that every scope is complete —
-        // an import we don't follow, a global, a typo. Only THIS note fails;
-        // the rest are unrelated, so carry on rather than abandoning them.
+        // Nothing binds this name even now that every scope is complete. Two
+        // very different reasons for that, and keeping them apart is the whole
+        // of gap 11: `console` was never going to be here, while a name this
+        // project really does declare failing to bind is the engine falling
+        // short. Only THIS note fails either way — the rest are unrelated, so
+        // carry on rather than abandoning them.
         if (!found) {
-            stillUnresolved++;
+            if (KNOWN_GLOBALS.has(note.use.name)) results.lookups.external++;
+            else results.lookups.unresolved++;
             continue;
         }
         // it's its own start, skip
@@ -177,9 +225,11 @@ export function collectVariables(node: TSESTree.Node, file: string): Results {
             continue;
         }
         attachUse(found, note.use, note.inReturnStatement, note.fn);
+        results.lookups.resolved++;
     }
 
-    trace("phase", `walk finished — ${stillUnresolved} deferred use(s) still unresolved`);
+    const { resolved, unresolved, external } = results.lookups;
+    trace("phase", `walk finished — ${resolved} resolved, ${unresolved} unresolved, ${external} external`);
     return results;
 }
 
@@ -228,6 +278,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             if (node.range[0] !== found.start) {
                 trace("resolve", `${node.name} at offset ${node.range[0]} -> declaration at offset ${found.start}${feedNote}`);
                 attachUse(found, use, inReturnStatement, currentFunction);
+                results.lookups.resolved++;
             } else {
                 trace("skip", `${node.name} at offset ${node.range[0]} is its own declaration, not a use of itself`);
             }
@@ -592,13 +643,25 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         return;
     }
 
-    // TS-only declarations: enum Mode, interface Config, type Result
+    // TS-only declarations: interface Config, type Result
+    // return to avoid getting TS declarations treated as references
+    // Note: enum needs a separate handling since there could be variables inside
     if (
-        node.type === "TSEnumDeclaration" ||
         node.type === "TSInterfaceDeclaration" ||
         node.type === "TSTypeAliasDeclaration"
     ) {
        stack[stack.length - 1]!.declarations.push(makeBinding(node.id, "declaration", "type"));
+       return;
+    }
+
+    // For Enums, only go into the declared variables. 
+    // (variables are in the `initializer` prop)
+    if (node.type === "TSEnumDeclaration") {
+        stack[stack.length - 1]!.declarations.push(makeBinding(node.id, "declaration", "type"));
+        for (const member of node.body.members) {
+            walkVariables(member.initializer!, results, stack);
+        }
+        return;
     }
 
     // Don't recurse into TypeAnnotation since it's just noise
