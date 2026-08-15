@@ -539,6 +539,42 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         return; // node.key is the declaration itself, nothing to resolve there.
     }
 
+    /*
+        Reassignment — gap 5. Note what was actually missing: in `let x; x = foo()`
+        both identifiers already resolved, `x` to its declaration and `foo` to its
+        function. What no one recorded is that foo's value lands in x, because only
+        a declaration's initializer ever set a feed target. So this is not a
+        resolution problem, it's a missing `feeds` stamp — the fix belongs here and
+        not anywhere near `lookup`.
+
+        The branch does for `x = foo()` what the VariableDeclaration branch does for
+        `const x = foo()`: point currentFeedTargets at the thing being written, walk
+        the right-hand side so the uses inside get stamped, then restore.
+
+        Two details that look arbitrary and aren't:
+
+        - `left` is walked BEFORE the target is set. Walking it after would stamp the
+          write as flowing into itself, so `x = 1` would emit `x -> x`.
+        - When the left side can't be named — `o.p = foo()`, or an identifier that
+          resolves to nothing — the target falls back to `previous` rather than [].
+          Not naming the write target says nothing about where the expression's own
+          value goes, and `const a = (o.p = foo())` really does put foo's result in
+          `a`. [] would throw that away.
+    */
+    if (node.type === "AssignmentExpression") {
+        walkVariables(node.left, results, stack);
+        const previous : Binding[] = currentFeedTargets;
+
+        if (node.left.type === "Identifier") {
+            const resolvedLeftNode = lookup(node.left.name, stack);
+            currentFeedTargets = resolvedLeftNode  ? [resolvedLeftNode] : previous;
+        }
+        walkVariables(node.right, results, stack);
+        // Restore currentFeedTargets to its previous value after handling AssignmentExpression
+        currentFeedTargets = previous;
+        return;
+    }
+
     // TS-only declarations: enum Mode, interface Config, type Result
     if (
         node.type === "TSEnumDeclaration" ||
