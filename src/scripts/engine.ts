@@ -16,7 +16,105 @@ let currentFeedTargets : Binding[] = [];
 let currentFunction : Binding | null = null;
 
 // Define whether we're in a ReturnStatement or not.
-let inReturn = false;
+let inReturnStatement = false;
+
+/**
+ * A use that did NOT resolve when the walk reached it, held for a
+ * second attempt once the walk is over -- this is what makes forward references 
+ * work (E.g. `foo(); function foo() {}`, `const a = b; const b = 2`).
+ * 
+ * `chain` is a *shallow* copy of the scope stack: the array is snapshotted
+ * so the later pushes/pops can't disturb it, but the `Scope` objects inside
+ * are the live ones, so their `declarations` keep filling as the walk continues
+ * and are complete by retry time. That is the whole trick -- no second walk, 
+ * no pre-pass, just a deferred lookup until the scopes it needs are finished
+ * 
+ * `use` is built at the point of use, so it already carries the `feeds` that
+ * `currentFeedTargets` held back then; `inReturn/fn` are captured for the same
+ * reason, since both are mutable module state that won't survive.
+ * 
+ * Think of it as a sticky note of reminder (when a use doesn't
+ * get resolved because it's not declared, it's pending to be resolved
+ * until the walker rewalks it.)
+ */
+type PendingUse = {
+    use: Use; // Represents the use itself.
+    chain: Scope[]; // Represents where the use was standing (in which scope?) when it got a "pending" state.
+    inReturnStatement: boolean; // Whether the pending use was in a return statement.
+    fn: Binding | null; // Which function the use was in.
+}
+
+let pendingUses: PendingUse[] = [];
+
+/**
+ * One thing the walker did, reported to whoever is watching. `kind` groups
+ * them (declare / resolve / defer / feed / scope), `detail` is the human
+ * sentence, `depth` is how deeply nested it was so a printer can indent.
+ */
+export type TraceEvent = { kind: string; detail: string; depth: number };
+
+/**
+ * Tracing hook — null in every normal run, so the whole mechanism costs one
+ * null check per event and nothing else. `trace.ts` sets it to watch a walk
+ * happen step by step.
+ *
+ * These events live in here rather than in trace.ts because they describe
+ * moments *inside* the walk — which scope was open, what the feed target was
+ * — and none of that is visible from outside once `collectVariables` returns.
+ */
+let onTrace: ((event: TraceEvent) => void) | null = null;
+let traceDepth = 0;
+
+/** Start (or, with null, stop) watching the walk. See trace.ts. */
+export function setTraceHook(hook: ((event: TraceEvent) => void) | null): void {
+    onTrace = hook;
+    traceDepth = 0;
+}
+
+/**
+ * Report one event. `depthChange` is +1 for "everything after this is nested
+ * inside it" (entering a scope) and -1 for leaving one; the decrement happens
+ * before reporting so the closing line sits at the same indent as its opener.
+ */
+function trace(kind: string, detail: string, depthChange: 0 | 1 | -1 = 0): void {
+    if (!onTrace) return;
+    if (depthChange === -1) traceDepth--;
+    onTrace({ kind, detail, depth: traceDepth });
+    if (depthChange === 1) traceDepth++;
+}
+
+/** Innermost-scope-outward lookup of `name` or undefined if there is nothing binding to it */
+function lookup(name: string, chain: Scope[]): Binding | undefined {
+    for (let i = chain.length - 1; i >= 0; i--) {
+        const found = chain[i]?.declarations.find(d => d.name === name);
+        if (found) return found;
+    }
+
+    return undefined;
+}
+
+/**
+ * Record `use` against the declaration it resolved to, and - if it happend 
+ * inside a return - note on the enclosing function that this declaration
+ * escapes through it. Shared by the immediate path and the deferred retry 
+ * so a forward reference inside a `return` still stamps `returns`.
+ */
+function attachUse(found: Binding, use: Use, wasInReturnStatement: boolean, fn: Binding | null): void {
+    if (wasInReturnStatement && fn) {
+        if (!Array.isArray(fn.returns)) {
+            fn.returns = [];
+        }
+        const alreadyIn = fn.returns.some(
+            r => r.start === found.start && r.file === found.file
+        );
+        if (!alreadyIn) {
+            // push the IDENTITY of the thing being returned:
+            fn.returns.push({ name: found.name, file: found.file, start: found.start });
+        }
+    }
+
+    found.uses.push(use);
+}
 
 // Build a Binding from an Identifier-like node (something with a `.name`).
 // varType is the declaration keyword (var/let/const) for variables, and ""
@@ -51,6 +149,9 @@ function makeUse(idNode: any): Use {
 
 export function collectVariables(node: TSESTree.Node, file: string): Results {
     currentFile = file;
+    // reset so that the pending uses from one file does not
+    // leak into another file.
+    pendingUses = [];
     const results: Results = { declarations: [] };
     // A stack to know which scope we're in, so that 2 or more variables with
     // the same name can be found without ambiguity. Created fresh per call so
@@ -58,6 +159,27 @@ export function collectVariables(node: TSESTree.Node, file: string): Results {
     const stack: Scope[] = [{ name: "global", declarations: [], savedFeedTargets: [], savedFunction: null }];
     walkVariables(node, results, stack);
     results.declarations.push(...stack[0]!.declarations);   // save global
+    // Re-lookup: Every declaration is walked with pendingUses so it's 
+    // time for pending uses to resolve.
+
+    let stillUnresolved = 0;
+    for (const note of pendingUses) {
+        const found = lookup(note.use.name, note.chain);
+        // Nothing binds this name even now that every scope is complete —
+        // an import we don't follow, a global, a typo. Only THIS note fails;
+        // the rest are unrelated, so carry on rather than abandoning them.
+        if (!found) {
+            stillUnresolved++;
+            continue;
+        }
+        // it's its own start, skip
+        if (found.start === note.use.start) {
+            continue;
+        }
+        attachUse(found, note.use, note.inReturnStatement, note.fn);
+    }
+
+    trace("phase", `walk finished — ${stillUnresolved} deferred use(s) still unresolved`);
     return results;
 }
 
@@ -82,41 +204,37 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
 
 
     if (node.type === "Identifier") {
-        for (let i = stack.length - 1; i >= 0; i--) {
-            // A found 
-            const found = stack[i]?.declarations.find(d => d.name === node.name);
-            if (found) {
-                if (node.range[0] === found.start) { break; }
-                const use = makeUse(node);
-                if (currentFeedTargets.length > 0) {
-                    use.feeds = currentFeedTargets.map(t => ({
-                        name: t.name,
-                        file: t.file,
-                        line: t.line,
-                        start: t.start,
-                    }));
-                }
-                if (inReturn && currentFunction) {
-                    if (!Array.isArray(currentFunction.returns)) {
-                        currentFunction.returns = [];
-                    }
-                    const alreadyIn = currentFunction.returns.some(
-                        r => r.start === found.start  && r.file === found.file
-                    );
+        // create a use of the node
+        const use = makeUse(node);
+        // populate feeds from currentFeedTargets
+        if (currentFeedTargets.length > 0) {
+            use.feeds = currentFeedTargets.map(t => ({
+                name: t.name,
+                file: t.file,
+                line: t.line,
+                start: t.start,
+            }));
+        }
+        // 
+        // Looks up the declaration of this identifier name in the scope stack,
+        // returning the nearest matching declared variable/function/param, or undefined if not found
+        const feedNote = use.feeds ? ` (feeds ${use.feeds.map(f => f.name).join(" + ")})` : "";
 
-                    if (!alreadyIn) {
-                        // push the IDENTITY of the thing being returned:
-                        currentFunction.returns.push({
-                            name: found.name,
-                            file: found.file,
-                            start: found.start
-                        });
-                    }
-                }
-                // push the use that got stamped
-                found.uses.push(use);
-                break;
+        const found = lookup(node.name, stack);
+        if (found) {
+            // Resolve this identifier use to its declaration if found, else mark as pending.
+            // An identifier that is a declaration is not a use (if statement checks this, if truthy,
+            // attaches the use)
+            if (node.range[0] !== found.start) {
+                trace("resolve", `${node.name} at offset ${node.range[0]} -> declaration at offset ${found.start}${feedNote}`);
+                attachUse(found, use, inReturnStatement, currentFunction);
+            } else {
+                trace("skip", `${node.name} at offset ${node.range[0]} is its own declaration, not a use of itself`);
             }
+        } else {
+            // Add use to pendingUses for later resolution when declaration is found
+            trace("defer", `${node.name} at offset ${node.range[0]} — no declaration of that name in scope yet${feedNote}`);
+            pendingUses.push({ use, chain: [...stack], inReturnStatement, fn: currentFunction });
         }
     }
 
@@ -154,13 +272,15 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     // with — because every declarator's names were pushed up front.
     if (node.type === "VariableDeclaration") {
         for (const decl of node.declarations) {
+            // grabs the top (latest) list. 
             const scopeDeclarations = stack[stack.length - 1]!.declarations;
             const before = scopeDeclarations.length;
 
-            // Prevent the classification of all "id" fields
-            // as variables
+            // Prevent the classification of all "id" fields as variables
             const initType = decl.init?.type;
             const isFunction = initType === "ArrowFunctionExpression" || initType === "FunctionExpression";
+            // sends it over to collectPatternNames with the top list
+            // (it first checks if the type is a function expression (see above) to send the correct "kind")
             collectPatternNames(decl.id, scopeDeclarations, isFunction ? "function" : "variable", node.kind);
 
             // Everything pushed by this declarator — one name normally, several
@@ -169,11 +289,13 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
 
             const previous = currentFeedTargets;   // save
             currentFeedTargets = targets;          // set
+            if (targets.length) trace("feed", `anything used from here flows into ${targets.map(t => t.name).join(" + ")}`, 1);
 
             if (decl.init) {                       // only if there's an init to walk
                 walkVariables(decl.init, results, stack); // walk — uses inside get stamped
             }
 
+            if (targets.length) trace("feed", `done — ${targets.map(t => t.name).join(" + ")} no longer the target`, -1);
             currentFeedTargets = previous;         // restore
         }
         return;   // declarators are walked above; don't let the generic loop repeat them
@@ -212,13 +334,6 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         return;
     }
 
-    // A bare expression statement — e.g. `rank(query)` — references variables
-    // without declaring anything, so its identifiers are all uses.
-    if (node.type === "ExpressionStatement") {
-        
-    }
-
-
     // { a: b } — an object literal property. A non-computed key is a label,
     // not a reference: the `a` names the property, so walking it would resolve
     // to any variable that happens to also be called `a` and record a use that
@@ -234,8 +349,8 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     }
 
     if (node.type === "ReturnStatement") {
-        const previous = inReturn;
-        inReturn = true;
+        const previous = inReturnStatement;
+        inReturnStatement = true;
         // node.argument contains the expression (x + y, {a, b}, c, etc.)
         // that is returned
 
@@ -246,7 +361,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         if (node.argument)
             walkVariables(node.argument, results, stack);
 
-        inReturn = previous;
+        inReturnStatement = previous;
         return;
     }
 
@@ -262,9 +377,10 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         // of the Binding type.
         let funcBinding;
 
-        // 1. Put the function's name in the CURRENT scope (before pushing the new one)
-        // This adds to the DECLARATIONS array that is one of stack's keys which is an array
+        // if the function has an ID (meaning it isn't an anonymous function)
+        // write the function in the current stack (not a separate one)
         if (node.id) {
+            trace("declare", `${node.id.name} (function) at offset ${node.id.range[0]}`);
             funcBinding = makeBinding(node.id, "declaration", "function", "N/A");
             stack[stack.length - 1]!.declarations.push(funcBinding);
         } else {
@@ -277,23 +393,33 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             }
         }
     
-        // 2. Build the params, then push the function's own new scope
-        // This adds a COMPLETELY NEW SCOPE to the stack ITSELF
+        // Build a parameter list with type Binding, THIS is the list that
+        // needs to be separate from the stack list. 
+        // Fill in the param list 
         const paramDeclarations: Binding[] = [];
         for (const param of node.params) {
             collectPatternNames(param, paramDeclarations, "param", "N/A");
         }
         
+        // if there is a funcBinding, set it to the filled paramDeclarations list.
         if (funcBinding) {
             funcBinding.params = paramDeclarations;
         }
+        trace("scope", `enter function ${node.id?.name ?? "(anonymous)"} — its parameters start this scope`, 1);
+        // push the function now that params are filled in paramDeclarations
         stack.push({
             name: node.id?.name ?? "anonymous_func",
             declarations: paramDeclarations,
             savedFeedTargets: currentFeedTargets,
             savedFunction: currentFunction,
         });
+        // Clear the list of currentFeedTargets because we are now inside a new function scope,
+        // so there are no flow-carrying targets to link variable uses to at this level.
         currentFeedTargets = [];
+        // Set the currentFunction to the current function's binding (funcBinding),
+        // or to null if there is no function binding. This keeps track of which function
+        // scope we are currently in, which is important for identifying return statements
+        // and properly attributing variable uses that escape through return.
         currentFunction = funcBinding ?? null;
     }
 
@@ -361,6 +487,8 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     }
 
     if (node.type === "BlockStatement") {
+        trace("scope", "enter block { } — names declared inside are invisible once it closes", 1);
+        // Push a new stack but there is no declarations
         stack.push({
             name: "block",
             declarations: [],
@@ -426,7 +554,13 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         return;
     }
 
-    // 4. plain object — recurse into every value
+    // 4. plain object — recurse into every value.
+    //
+    // This is also the default handler for every node type without a branch
+    // above. A bare expression statement — `rank(query)` — needs no case of
+    // its own for exactly that reason: nothing in it declares anything, so
+    // recursing generically makes every identifier inside it a use, which is
+    // the correct answer.
     for (const value of Object.values(node)) {
         walkVariables(value, results, stack);
     }
@@ -435,14 +569,21 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     if (node.type === "FunctionDeclaration" ||
         node.type === "FunctionExpression" ||
         node.type === "ArrowFunctionExpression") {
+        trace("scope", "leave function — its declarations move into the results list", -1);
+        // get the top list
         const closing = stack[stack.length - 1]!;
-        currentFeedTargets = closing.savedFeedTargets;
-        currentFunction = closing.savedFunction;
+        // Restore feed targets and function context when leaving a function scope
+        currentFeedTargets = closing.savedFeedTargets ?? [];
+        currentFunction = closing.savedFunction ?? null;
+
+        // save the top list in results
         results.declarations.push(...closing.declarations);
+        // pop it from the stack (stops being findable)
         stack.pop();
     }
     
     if (node.type === "BlockStatement") {
+        trace("scope", "leave block — its declarations move into the results list", -1);
         const closing = stack[stack.length - 1]!;
         currentFeedTargets = closing.savedFeedTargets;
         currentFunction = closing.savedFunction;
@@ -462,8 +603,10 @@ export function collectPatternNames(pattern: TSESTree.Node | null, declarations:
     }
 
     switch (pattern.type) {
-        // x
+        // If the type is an identifier, it makes a Binding with a "declaration" tag
+        // (because the variable is being declared)
         case "Identifier":
+            trace("declare", `${pattern.name} (${kind}) at offset ${pattern.range[0]}`);
             declarations.push(makeBinding(pattern, "declaration", kind, varType));
             break;
 

@@ -121,6 +121,34 @@ test("a for...of body sees the loop variable", () => {
         .toEqual(["x -> b"]);
 });
 
+// Gap 2 — a use reached before its declaration used to resolve to nothing and
+// be silently discarded. It is now held in `pendingUses` with a snapshot of the
+// scopes visible from that spot, and the lookup is retried once the walk is
+// over. Not a second walk: the snapshot's Scope objects are the live ones, so
+// their declarations finish filling on their own.
+test("a call above a hoisted function still records a use", () => {
+    expect(useCounts(`foo(); function foo(p) {}`).foo).toBe(1);
+});
+
+test("a forward reference resolves to the later declaration", () => {
+    expect(edges(`const a = b; const b = 2;`)).toEqual(["b -> a"]);
+});
+
+// The guard on the retry being *scoped* rather than a name match over the whole
+// file: `y`'s block was popped before `z` was walked, so it was never on `z`'s
+// snapshot and must stay unresolved. Fails if the retry ever searches the live
+// stack, or all declarations, instead of `note.chain`.
+test("a use does not resolve to a declaration from a closed block", () => {
+    expect(edges(`{ const y = 1; } const z = y;`)).toEqual([]);
+});
+
+// The guard on one unresolvable name not taking the others down with it: `foo`
+// never resolves, but it is only one entry in the retry loop. An early `break`
+// there dropped every note behind it.
+test("an unresolvable name does not block later deferred uses", () => {
+    expect(edges(`foo(); const a = b; const b = 2;`)).toEqual(["b -> a"]);
+});
+
 // Gap 5 — only declaration initializers set a flow target.
 test.todo("reassignment produces an edge", () => {
     expect(edges(`function foo(){return 1} let x; x = foo();`)).toEqual(["foo -> x"]);
@@ -153,11 +181,4 @@ test("a computed property key still resolves as a use", () => {
 
  // ==== TODOs ====
 
-// Gap 2 — uses before their declaration are dropped (no node, no edge, no warning).
-test.todo("a call above a hoisted function still records a use", () => {
-    expect(useCounts(`foo(); function foo(p) {}`).foo).toBe(1);
-});
-
-test.todo("a forward reference resolves to the later declaration", () => {
-    expect(edges(`const a = b; const b = 2;`)).toEqual(["b -> a"]);
-});
+// Gap 5 is the only one left — see `reassignment produces an edge` above.
