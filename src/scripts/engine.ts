@@ -481,7 +481,18 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
                 currentFeedTargets = save;
             }
 
-            walkVariables(node.callee, results, stack);
+            // This block ensures that all sub-expressions of the function call's callee are visited.
+            // For member expressions (e.g., obj.method()), both the object ('obj') and the property ('method') could reference identifiers or expressions that should be walked.
+            // For other callee types (e.g., identifier, function expression), just walk the callee itself.
+            if (node.callee.type === "MemberExpression") {
+                // Walk the object part of the member expression (e.g., 'obj' in 'obj.method')
+                walkVariables(node.callee.object, results, stack);
+                // Walk the property part as well (e.g., 'method' in 'obj.method')
+                walkVariables(node.callee.property, results, stack);
+            } else {
+                // For non-member calls, walk the callee (could be identifier or another expression)
+                walkVariables(node.callee, results, stack);
+            }
             return;
         }
     }
@@ -572,6 +583,12 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         walkVariables(node.right, results, stack);
         // Restore currentFeedTargets to its previous value after handling AssignmentExpression
         currentFeedTargets = previous;
+        return;
+    }
+
+    if (node.type === "MemberExpression") {
+        walkVariables(node.object, results, stack);
+        if (node.computed) walkVariables(node.property, results, stack);
         return;
     }
 
