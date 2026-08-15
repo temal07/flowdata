@@ -217,6 +217,31 @@ test("a computed property key still resolves as a use", () => {
         .toEqual(["k -> o", "v -> o"]);
 });
 
+// Gap 9 — the fourth place gap 6's rule holds, and the one it was never
+// applied to: *reading* a member expression. `o.p` had no branch, so the
+// generic recursion walked `property` and looked `p` up as a variable. When
+// nothing was named `p` that was only noise; when something was, it invented
+// an edge. Same fix shape as the Property branch above.
+test("a member property that shadows a variable records no use", () => {
+    expect(edges(`const p = 99; const o = { p: 1 }; const a = o.p;`)).toEqual(["o -> a"]);
+});
+
+test("a computed member property still resolves as a use", () => {
+    expect(edges(`const k = "p"; const o = { p: 1 }; const a = o[k];`))
+        .toEqual(["k -> a", "o -> a"]);
+});
+
+// The guard on the trap in that fix. A method call's edge comes from resolving
+// the callee's *property* — `score` — which is exactly what the new branch
+// skips. CallExpression therefore walks its own callee rather than delegating
+// to the generic walk. Without this test the naive version of gap 9's fix
+// silently deletes `score -> out` and the whole suite still passes; that was
+// verified, not assumed.
+test("a method call still records a use of the method name", () => {
+    expect(edges(`class R { score(q) { return q } } const r = new R(); const z = 1; const out = r.score(z);`))
+        .toContain("score -> out");
+});
+
 // Gap 7 (import resolution assumes `.ts`) is cross-file, so it can't be tested
 // through collectVariables. It needs the `analyze(dir)` extraction out of
 // flow.ts and a fixture directory.
