@@ -19,7 +19,7 @@ Static analysis engine for TypeScript/JavaScript. Parses source into an AST, res
 | Query/traversal layer (`query <name>`)       | ✅ Done — forward trace               |
 | Automated tests                              | ⏳ Partial — `bun test`, engine only  |
 | Method-call resolution                       | ✅ Done — name-only, receiver ignored |
-| Two-pass resolution                          | ⏳ Next                               |
+| Forward references                           | ✅ Done — deferred lookup, see gap 2  |
 | MCP wrapper                                  | ⏳ Planned                            |
 
 
@@ -45,6 +45,10 @@ Most of these are guarded by `bun test` (`src/tests/engine.test.ts`); the rest w
 
 **Property keys aren't mistaken for references.** `const o = { a: b }` records a use of `b` only; the key `a` is a label, even when a variable named `a` is in scope. `{ z }` records one use, not two. Computed keys still resolve: `{ [k]: v }` records both `k` and `v`.
 
+**Forward references resolve.** `const a = b; const b = 2` gives `b` feeds `a`, and `foo(); function foo(p) {}` records the call as a use of `foo`. A use that can't resolve when the walk reaches it is retried after the walk instead of being dropped — see gap 2. Still correctly scoped: `{ const y = 1; } const z = y` produces nothing, because the block had closed.
+
+**Loop bodies see the loop variable.** `for (let i = 0; i < 3; i++) { const b = i }` gives `i` feeds `b`. This looked like a hoisting problem and wasn't — see the first bullet under gap 2.
+
 ---
 
 ## Known gaps
@@ -61,18 +65,39 @@ Three things this deliberately does **not** do:
 - **Computed forms are skipped.** `r[k](z)` and `class R { [name]() {} }` have no statically-known name — the identifier there names a *variable holding* the name, so reading it would silently produce a wrong answer. Both bail out on `computed === true`.
 - **Unresolvable member calls now emit no argument edge.** Previously `a.b.c(z)` fell through and `z` picked up the ambient feed target, giving a coarse `z → out`. Now the branch fires, finds nothing, and sets the target to null. This matches how unresolved *plain* calls have always behaved, but it does drop argument edges for object-literal methods and built-ins (`arr.map(fn)`, `str.split(sep)`).
 
-### 2. Uses before their declaration are dropped
+### 2. Uses before their declaration are dropped — ✅ RESOLVED, except under shadowing
 
-A single walk in source order means a declaration must be visited before any use of it. When it isn't, the identifier resolves to nothing and **the use is silently discarded** — no node, no edge, no warning.
+A single walk in source order meant a declaration had to be visited before any use of it. When it wasn't, the identifier resolved to nothing and **the use was silently discarded** — no node, no edge, no warning.
 
 ```ts
-foo(); function foo(p) {}       // `foo` ends up with zero uses
-const a = b; const b = 2;       // `b` ends up with zero uses
-for (let i = 0; i < 3; i++) { const b = i }   // body's use of `i` lost;
-                                              // test/update uses are kept
+foo(); function foo(p) {}       // `foo` ended up with zero uses
+const a = b; const b = 2;       // `b` ended up with zero uses
 ```
 
-Fix is two-pass resolution: pass 1 walks the tree collecting declarations only, pass 2 walks again resolving uses against the now-complete scopes. The hard part is carrying each scope's pass-1 declarations into pass 2 — the scope stack is rebuilt on the second walk, so scopes need stable identity (node range works) to look up what pass 1 found.
+The fix filed here was two-pass resolution — pass 1 collects declarations, pass 2 resolves uses against complete scopes. **That was abandoned.** Its hard part (rebuilding the scope stack on the second walk and giving scopes stable identity across both) turned out to be avoidable entirely.
+
+What shipped instead is a **deferred lookup**. When an identifier doesn't resolve, `walkVariables` files a `PendingUse` — the `Use` itself, a snapshot of the scope chain, and the `inReturnStatement` / `currentFunction` values live at that moment — and keeps walking. `collectVariables` retries every pending lookup once the walk is over, by which point every declaration exists. No second walk, no pre-pass.
+
+The snapshot is the whole trick, and it is deliberately **shallow**. `[...stack]` copies the array, so later pushes and pops can't disturb it — the record of *which* scopes were visible is frozen. But the `Scope` objects inside are the live ones, so their `declarations` keep filling as the walk continues and are complete by retry time. **Freeze which scopes; don't freeze what's in them.**
+
+Correct scoping falls out of that for free, in both directions:
+
+```ts
+const a = b; const b = 2;       // resolves — both share the one live global Scope
+{ const y = 1; } const z = y;   // does NOT resolve — the block had already popped
+                                // when `z` was walked, so it was never on the chain
+```
+
+`lookup` and `attachUse` were extracted from the identifier branch so the deferred path behaves identically to the immediate one — in particular a forward reference inside a `return` still stamps `returns` on the enclosing function, which is why the note carries `inReturnStatement`/`fn` rather than reading the module variables (both are back to `false`/`null` by retry time).
+
+Four things worth knowing:
+
+- **The third example originally filed here was misfiled.** `for (let i = 0; i < 3; i++) { const b = i }` was never a hoisting problem. The generic recursion iterates `Object.values(node)` and typescript-estree emits properties alphabetically, so `body` came before `init`/`left`/`test`/`update` and the walker reached the body before the loop variable. Nothing there is used before it is *declared*, only before the walker happened to *arrive*. Fixed separately, by naming loop children in source order the way `VariableDeclaration` and `MethodDefinition` already do.
+- **Shadowing is still wrong** — see gap 8, which is where the measurement and the fix live. The short version: the retry fires on lookup *failure*, and shadowing is a lookup *success with the wrong answer*, so no note is ever written.
+- **TDZ is ignored on purpose.** `const a = b; const b = 2` is a `ReferenceError` at runtime. The edge is drawn anyway — this is a graph of where values *would* flow, not a soundness checker.
+- **One dead name must not take the others down with it.** The retry loop's failure branch has to `continue`, not `break`; an early `break` dropped every note queued behind the first unresolvable one. Guarded by a test.
+
+To check any of this: `bun run src/scripts/trace.ts <file>`. The closing line reports how many uses stayed unresolved after the retry.
 
 ### 3. Classes, methods, types, and catch params are never resolvable — ✅ RESOLVED for classes/methods/catch
 
@@ -137,18 +162,50 @@ Same computed/non-computed split as gap 1's `MemberExpression` callee and `Metho
 
 The resolver appends `.ts` unconditionally, so pure-JS projects extract fine but never link. Directory imports (`./foo` → `./foo/index.ts`) and explicit extensions (`./foo.js` → `./foo.js.ts`) also fail. Fix: try a candidate list of extensions and index files.
 
+### 8. A use resolves to an outer declaration that a later inner one shadows
+
+The residue of gap 2. A use is resolved against the scopes as they stand *at that moment*, so a declaration that appears later in an inner scope never gets the chance to shadow.
+
+```ts
+const x = 1; function f() { const y = x; const x = 2 }
+//                                    ↑ resolves to x@6 (outer); should be x@47
+
+function foo() { return 1 }
+function f() { const a = foo(); function foo() { return 2 } }
+//                        ↑ resolves to foo@9 (outer); should be foo@69
+```
+
+The second is the one that matters. The `const` version is a TDZ `ReferenceError` — already-broken code — but an inner `function` declaration really is hoisted and really does shadow, so that call returns 2 and the graph says otherwise.
+
+Gap 2's retry cannot reach this: it fires on lookup *failure*, and this is a lookup *success with the wrong answer*. Nothing distinguishes it from a correct resolution at the moment it happens, so no `PendingUse` is ever filed.
+
+**Measured, August 15 2026.** Deferring *every* identifier rather than only the failures — a one-line change, `walkVariables` never resolving inline — fixes both cases: the retry's `chain` holds the lexically enclosing scopes, and by retry time each holds all of its declarations, so `lookup` finds the genuinely innermost one. All 19 engine tests still pass, and it is not slower (0.70 vs 0.73 ms per walk over a 600-line file — the eager lookup is traded for a deferred one, not added to).
+
+**What blocks it is not cost, it's the call-site lookup.** `CallExpression` does its own separate resolution to reach `calledFunc.params`, and that one genuinely *can't* be deferred — it needs the callee's parameters *during* the walk, to set the feed target before the arguments are walked. Deferring only the identifiers splits the graph's story in two:
+
+```ts
+function foo(p) { return 1 }
+function f(z) { const a = foo(z); function foo(q) { return 2 } }
+// use of `foo` → inner foo@72   (fixed)
+// z -> p       → OUTER foo's param@13   (not fixed; should be q@76)
+```
+
+The graph would then assert both "this call is the inner `foo`" and "its argument flows into the outer `foo`'s parameter," and `query.ts` — which traverses `feeds` — would walk into a body the graph says was never called. Being *consistently* wrong is more tractable than being *inconsistently* wrong, and it matches how gap 1's ignored receiver already behaves.
+
+So: do the two together, as one change, or not at all. Worth measuring the frequency of inner-hoisted-function shadowing on a real repo first — if it's rare, this stays cheap to ignore.
+
 ---
 
 ## Next up
 
-1. **Reassignment** (gap 5) — `x = foo()` sets no feed target at all. Smallest remaining.
-2. **Cross-file test harness** — engine-level tests exist now (`src/tests/engine.test.ts`, 11 passing), but `flow.ts` does linking, graph assembly, and serving at module scope, so there's no function to call. Extract `analyze(dir) → Graph` before anything can test linking, or gap 7.
-3. **Two-pass resolution** (gap 2) — invasive rewrite of the core walk. Everything above is cheaper; do this after.
-4. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all?
+1. **Reassignment** (gap 5) — `x = foo()` sets no feed target at all. Smallest remaining, and the only `test.todo` left. The branch belongs on `AssignmentExpression`, not `ExpressionStatement`: the target is `node.left`, and assignment also turns up outside statement position (`const a = (x = foo())`, `while ((m = re.exec(s)))`). Shape it like the `VariableDeclaration` branch — resolve `left`, set `currentFeedTargets`, walk `right`, restore.
+2. **Cross-file test harness** — the blocker named here is gone: `analyse(dir) → Graph` now exists in `analyse.ts`, so there is a function to call. The fixture directory and the tests themselves still aren't written. This is what unblocks gap 7.
+3. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all?
+4. **Shadowing + call-site resolution together** (gap 8, and the receiver half of gap 1) — the identifier half is a one-line change that already measures clean; it's the `CallExpression` lookup that has to move with it. Measure the frequency first.
 5. **MCP wrapper** — serve the graph to agents once coverage is trustworthy.
 
-Still worth measuring, on a real repo: what fraction of uses resolve, what fraction of call sites resolve, and how often two same-named methods collide within one file. The last decides whether gap 1's ignored receiver needs revisiting.
+Still worth measuring, on a real repo: what fraction of uses resolve, what fraction of call sites resolve, and how often two same-named methods collide within one file. The last decides whether gap 1's ignored receiver needs revisiting. The first is nearly free now — `collectVariables` already counts the uses that survive the retry unresolved; making that a `PendingUse[]` instead of a number would name them too.
 
 ---
 
-*Last updated: August 9, 2026*
+*Last updated: August 15, 2026*

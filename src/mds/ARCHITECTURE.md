@@ -16,6 +16,7 @@ How flowdata analyzes a codebase, from source files to a data-flow graph.
 - **Return → call-site flow** — tracing a function's return value back to whatever each caller assigns it to. This completes full interprocedural data flow: chaining argument → parameter → return → call site so a value can be followed all the way through a function (`z → p → return → a`).
 
 - **Query and traversal layer** — `query <name>` reads the emitted `graph.json` and traces a declaration forward through `feeds` edges and function returns, so the graph is consumable without re-running the analysis.
+- **Forward references** — a use reached before its declaration is held with a snapshot of the scopes visible from that point and resolved after the walk, so hoisted calls and forward references produce edges instead of being dropped. Replaces the two-pass rewrite this was originally going to need; see gap 2 in `NOTES.md`.
 
 ### In progress
 
@@ -25,7 +26,6 @@ How flowdata analyzes a codebase, from source files to a data-flow graph.
 
 - **Scope-stack fix for classes, methods, types, and catch params** — these are emitted as nodes but never pushed onto the scope stack, so no use can resolve to them.
 - **Method-call resolution** — handle `obj.method()` call sites, not just direct calls, so interprocedural flow fires on the majority of real-world calls.
-- **Two-pass resolution** — resolve uses that appear before their declaration in source order (function hoisting, forward references, some loop constructs).
 - **Complete JS import resolution** — resolve imports across extensions and index files rather than assuming `.ts`.
 - **MCP server** — expose the graph to AI agents so they can query a codebase's data flow directly.
 - **Multi-language support** — additional language extractors emitting the same neutral declaration format, so the graph, linking, and query layers work unchanged across languages.
