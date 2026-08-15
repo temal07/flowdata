@@ -11,6 +11,7 @@ import { resolve } from "path";
  */
 const IGNORED_DIRS = new Set([
   "node_modules", ".git", "dist", "build", "out", "coverage", ".next", "vendor",
+  "*.min.js",
 ]);
 
 /**
@@ -20,13 +21,27 @@ const IGNORED_DIRS = new Set([
  * @param {string} relativePath - The path relative to the project directory.
  * @returns {boolean} True if the file should be analyzed as project source, false otherwise.
  */
-function isProjectSource(relativePath: string): boolean {
+export function isProjectSource(relativePath: string): boolean {
   if (relativePath.split("/").some((segment) => IGNORED_DIRS.has(segment))) return false;
   /**
    * Ambient type declarations: no runtime values, so no data flow to trace,
    * and they're the bulk of what ships inside packages.
    */
   if (relativePath.endsWith(".d.ts")) return false;
+  /**
+   * Minified bundles. IGNORED_DIRS catches the usual homes for vendored code,
+   * but a checked-in bundle can live anywhere — `src/viewer/lib/cytoscape.min.js`
+   * is under none of them, and on its own accounted for 8,621 of this repo's
+   * 8,876 nodes. 97% of the graph was a dependency nobody wants to trace, and
+   * it swamped every whole-project measurement.
+   *
+   * Filtering on the directory name wouldn't generalise — `lib/` is ordinary
+   * source in plenty of projects. The property that actually matters is that
+   * the file is minified: the names are mangled, so every edge is noise. The
+   * `.min.` marker is the cheap version of that test; the general one is a
+   * maximum line length, which needs the file's contents rather than its path.
+   */
+  if (/\.min\.[cm]?js$/.test(relativePath)) return false;
   return true;
 }
 

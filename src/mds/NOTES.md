@@ -21,6 +21,7 @@ Static analysis engine for TypeScript/JavaScript. Parses source into an AST, res
 | Method-call resolution                       | ✅ Done — name-only, receiver ignored |
 | Forward references                           | ✅ Done — deferred lookup, see gap 2  |
 | Reassignment (`x = foo()`)                   | ✅ Done — not destructuring, see gap 5|
+| Resolution reporting (`Results.lookups`)     | ✅ Done — 90.8% on `src/scripts`      |
 | MCP wrapper                                  | ⏳ Planned                            |
 
 
@@ -266,34 +267,93 @@ So the fix is two parts: the branch, plus `CallExpression` walking `callee.objec
 
 The four vanished edges are the phantoms. What survives in the unresolved pile splits cleanly in two, and neither is a walker bug: real globals (`console` 21, `Bun` 13, `process` 12 — that's gap 11), and built-in *method* names (`push` 22, `log` 17, `map` 7) which are looked up on purpose under gap 1's name-only rule and simply don't exist in the project.
 
-### 10. Vendored and minified files aren't excluded
+### 10. Vendored and minified files aren't excluded — ✅ RESOLVED
 
 `IGNORED_DIRS` covers `node_modules`, `dist`, `vendor` and friends, but `src/viewer/lib/cytoscape.min.js` sits under none of them. So a full run on this repo produced **8,876 nodes of which 8,621 came from that one file** — 97% of the graph is a dependency nobody wants to trace, and it swamps every measurement taken from the whole project (the 42 same-name function collisions counted in the first run were all inside it).
 
-Filtering on directory name won't generalise — `lib/` is a normal source directory in plenty of projects. The property that actually matters is that the file is minified, so `.min.js` / `.min.mjs` is the better rule, mirroring how `.d.ts` is already excluded for having no runtime values. A very long maximum line length would be the more general version of the same test.
+Filtering on directory name won't generalise — `lib/` is a normal source directory in plenty of projects. The property that actually matters is that the file is minified, so the rule added to `isProjectSource` is `/\.min\.[cm]?js$/`, mirroring how `.d.ts` is already excluded for having no runtime values. A maximum line length is the more general version of the same test, but it needs the file's contents rather than its path, so it can wait for a case the extension rule misses.
 
-### 11. Unresolvable globals are counted as resolution failures
+`isProjectSource` is exported now purely so this is testable — it's the one piece of `analyse.ts` that's a pure function, and testing it needs no fixture directory. Everything else in there still waits on the cross-file harness.
+
+Whole-repo effect: **13 files / 8,876 nodes → 12 files / 311 nodes.** Every number taken from the whole project before August 15 2026 should be read as being about cytoscape.
+
+### 11. Unresolvable globals are counted as resolution failures — ✅ RESOLVED
 
 `console`, `Bun`, `process`, `JSON`, `Math` and friends are never declared in the source, so every use of them defers, fails the retry, and lands in the same bucket as a genuine engine failure. In the measurement above `console` alone accounts for 21 of 551, and `Bun` 13.
 
-That makes the resolution rate read worse than it is and, more importantly, hides the real failures behind a floor of permanent ones. Wanted: a known-globals set, and a third category alongside resolved/unresolved so "the engine could not do this" stays separable from "there is nothing to resolve." Cheap, and it's what makes the resolution rate usable as a regression signal.
+That makes the resolution rate read worse than it is and, more importantly, hides the real failures behind a floor of permanent ones.
+
+Fixed with `KNOWN_GLOBALS` in `engine.ts` — runtime objects (`console`, `Bun`, `process`), language built-ins (`Object`, `JSON`, `Promise`), and built-in *method* names (`push`, `map`, `log`), which reach the lookup because gap 1 resolves method calls by name and no project declares `push`. `Results.lookups` now carries `{ resolved, unresolved, external }`, and `analyse` sums it across files, so the number is readable without attaching a trace hook and scraping the phase line.
+
+Two properties worth keeping:
+
+- **The set is consulted only after the scope chain has already come up empty**, so a real declaration always shadows it. `function map(f){...}` in the source means `map` resolves normally and never counts as external. Guarded by a test.
+- **A name missing from the set counts as unresolved**, which is the safe error — an incomplete list understates coverage rather than inventing it. The set is a reporting aid, not a correctness mechanism, and nothing in the graph depends on it.
+
+**Measured after gaps 10 and 11, August 15 2026**, on `src/scripts`:
+
+| | before gap 9 | after gap 9 | after gaps 10+11 |
+| --- | --- | --- | --- |
+| resolved | 712 | 715 | 743 |
+| unresolved | 551 | 257 | **75** |
+| external | — | — | 188 |
+| rate, excluding external | — | — | **90.8%** |
+
+The headline is that real coverage was never 56.8% — it was around 80% with a floor of permanent failures sitting on top of it, and the remaining 75 misses are now a small enough number to read by name. Which is how gap 12 turned up.
+
+### 12. Interface and type-alias members are treated as references — ✅ RESOLVED
+
+The same rule as gaps 6 and 9, a fifth time. `TSInterfaceDeclaration` pushes the interface's name and then falls through to the generic recursion, which walks the body — so each `TSPropertySignature`'s key is looked up as if it were a variable.
+
+```ts
+const name = "x";
+interface R { name: string; line: number }
+//            ^ resolves to the const above — a phantom use
+//                            ^ deferred, then counted as unresolved
+```
+
+Reading the 75 remaining misses on this repo is what surfaced it: `line`, `source`, `kind`, `start`, `declarations`, `id`, `code`, `target`, `occurrences`, `root`, `nodes`, `edges` are all field names in `types.ts`. It is self-inflicted here — a project that declares fewer interfaces would see less of it — but the phantom-use half is a wrong edge wherever it happens.
+
+**The fix is not the same shape as the others, and that's the thing to remember.** `TSEnumDeclaration`, `TSInterfaceDeclaration` and `TSTypeAliasDeclaration` shared one branch, and they are not the same kind of thing:
+
+- **Interface and type-alias bodies are pure type space.** No member of them is ever a runtime value — not the keys, not the annotations, not an index signature's parameter. So they push their name and `return` outright, extending the decision `TSTypeAnnotation` already makes at the top of the walk.
+- **Enum bodies are half value space.** `enum E { A = SIZE }` reads a real variable. A blanket `return` would have silently dropped it, so enums keep walking — but only the members' `initializer`s, never their `id`s.
+
+That split is the whole subtlety, and getting it backwards is easy: `TSEnumMember` stores the label on `id` and the value on `initializer`, so walking `member.id` skips the reference and looks up the label — precisely inverting the fix. That version passed all 35 tests then in the suite and a clean `tsc`. The two enum tests added alongside this fail on it, and were checked to fail on it.
+
+**Measured after the fix, August 15 2026**, on `src/scripts`:
+
+| | after gaps 10+11 | after gap 12 |
+| --- | --- | --- |
+| resolved | 743 | 748 |
+| unresolved | **75** | **28** |
+| external | 188 | 189 |
+| rate, excluding external | 90.8% | **96.4%** |
+
+Whole repo, 12 files: 1061 resolved, 127 unresolved, 89.3%.
+
+What's left of the residue is fully accounted for, with nothing unexplained: `import.meta` (a `MetaProperty`, not an ordinary member expression) and built-in methods missing from `KNOWN_GLOBALS` — `isArray`, `text`, `cwd`, `write`, `serve`, `scan`, `json`. Both cosmetic; neither produces a wrong edge. Adding the missing names is a one-line change whenever the number starts to matter.
 
 ---
 
 ## Next up
 
-1. **Vendored/minified exclusion** (gap 10) — one line in `isProjectSource`. Smallest thing here, and until it lands every whole-repo measurement is 97% cytoscape.
-2. **Globals as a third category** (gap 11) — makes the resolution rate mean something, which is what turns it into a regression signal for everything below. It also does double duty: knowing `Bun` and `console` are external is what lets a `Bun.file()` call stop binding to a local `file` (see gap 1's August 15 note).
-3. **Method-name binding** (the receiver half of gap 1) — now the dominant source of *wrong* edges, since gap 9 cleared the noise that hid it. Cheaper than full type inference: restrict the name-only match to method declarations, and treat known-global receivers as external.
-4. **Cross-file test harness** — the blocker named here is gone: `analyse(dir) → Graph` exists in `analyse.ts`, so there is a function to call. The fixture directory and the tests themselves still aren't written, and every engine test to date runs `collectVariables` on a single string — nothing exercises linking. This is what unblocks gap 7.
-5. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all?
-6. **Shadowing + call-site resolution together** (gap 8, and the receiver half of gap 1) — the identifier half is a one-line change that already measures clean; it's the `CallExpression` lookup that has to move with it.
-7. **Destructuring assignment** (remainder of gap 5) — `[a, b] = foo()` needs a lookup-per-leaf sibling to `collectPatternNames`. Small, but rare enough in real code that it can wait for evidence.
-8. **MCP wrapper** — serve the graph to agents once coverage is trustworthy.
+1. **Call-site resolution** — gap 1's ignored receiver and gap 8's shadowing, as one change. Gap 8's entry explains why they can't be separated: deferring identifier lookups fixes shadowing but leaves `CallExpression` resolving the callee eagerly, so the graph would claim a call is the inner function while its argument flows into the outer one's parameter. This is now the **only known source of wrong edges** — everything else on this list is missing edges. Cheaper than type inference: restrict the name-only match to method declarations, and use `KNOWN_GLOBALS` so a global receiver marks the call external rather than binding `Bun.file()` to a local `file`.
+2. **Cross-file test harness** — the blocker named here is gone: `analyse(dir) → Graph` exists in `analyse.ts`, so there is a function to call. The fixture directory and the tests themselves still aren't written, and every engine test to date runs `collectVariables` on a single string — nothing exercises linking. Unblocks gap 7, and is the real gate on anything external consuming this.
+3. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all? Gap 12 settled that type *bodies* are skipped; this is the separate question of whether `const x: Result` should record a use of `Result`.
+4. **Destructuring assignment** (remainder of gap 5) — `[a, b] = foo()` needs a lookup-per-leaf sibling to `collectPatternNames`. Small, but rare enough to wait for evidence.
+5. **MCP wrapper** — serve the graph to agents once coverage is trustworthy. Not close: linking is untested (item 2), gap 7 means a JS project links nothing at all and says so silently, `query.ts` has no backward trace, and a graph of this size can't be handed to an agent whole — the surface has to be bounded traversals, not "here is the graph."
 
-**Measured August 15 2026**, by calling `analyse()` directly and accumulating the trace hook's post-retry unresolved count. On `src/scripts` — 8 files, 215 nodes, 148 edges, 31 ms — **56.8% of uses resolved**. On the whole repo, 13 files and 8,876 nodes, but see gap 10 before reading anything into that.
+**Measured August 15 2026** by calling `analyse()` directly and reading `lookups`. On `src/scripts`, 8 files: **748 resolved, 28 unresolved, 189 external — 96.4%** excluding externals. Whole repo, 12 files, 316 nodes: 89.3%. The progression over one day, same target, as each gap closed:
 
-The measurement earned its keep immediately: it was run to decide between the test harness and gap 8, and instead surfaced gap 9, which neither was. Worth repeating after gaps 9-11 land, and worth pointing at a repo that isn't this one. Two numbers still unmeasured: what fraction of *call sites* resolve, and how often two same-named methods collide in one file — the second is what decides whether gap 1's ignored receiver needs revisiting, and it can't be read off this repo until gap 10 stops cytoscape from dominating the count.
+| | start | gap 9 | gaps 10+11 | gap 12 |
+| --- | --- | --- | --- | --- |
+| unresolved | 551 | 257 | 75 | **28** |
+| rate | 56.8% | 73.6% | 90.8% | **96.4%** |
+
+Most of that was never a coverage problem: gap 11 showed a permanent floor of globals was hiding the real number, and gaps 9 and 12 were one rule — *a non-computed key is a label* — unenforced in two more places. What remains is `import.meta` and a handful of built-in method names, neither of which produces a wrong edge.
+
+**The method that produced all of it is worth keeping.** Run the analysis, then read the unresolved names *by name*. Gap 9 came from reading that list, and so did gap 12. Ranked residue points at systematic bugs in a way an aggregate number never does. Two things still unmeasured: what fraction of *call sites* resolve, and how often same-named methods collide in one file — the second decides how much item 1 actually buys. And every number here is this repo analysing itself; the next measurement should be a codebase nobody here wrote.
 
 ---
 
