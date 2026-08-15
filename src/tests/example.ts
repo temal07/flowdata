@@ -1,6 +1,5 @@
-function foo(p : any) {
-    return p;
+enum M {
+  Foo = 1,
+  Bar = 2,
+  Baz = 3,
 }
-
-const z = 2;
-const a = foo(z);
