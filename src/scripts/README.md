@@ -15,6 +15,7 @@ If you're new to this codebase, read the files in this order:
 | 3 | [`analyse.ts`](./analyse.ts) | The project-wide pipeline: walk every file, link imports across files, flatten to nodes, turn `feeds` into edges. A directory path in, a `Graph` out — no I/O beyond reading source. |
 | 4 | [`flow.ts`](./flow.ts) | The `flow` CLI — parses argv, calls `analyse()`, writes `graph.json`, serves the viewer and opens it. |
 | — | [`tree.ts`](./tree.ts) | Dev utility: dumps the raw parser AST for a fixture file. Useful when adding a new node-type case to `engine.ts`. |
+| — | [`trace.ts`](./trace.ts) | Dev utility: prints what `engine.ts` *did* while walking a snippet — every name declared, every name resolved, every scope opened and closed. Reach for it when the engine's behaviour stops matching your mental model. |
 | — | [`debug.ts`](./debug.ts) | Dev utility: runs `analyse()` against `src/tests` and dumps the graph as JSON, no CLI/server/viewer. For quick inspection while iterating on `engine.ts`. |
 
 ## Mental model
@@ -85,6 +86,9 @@ flow <path-to-project>
 
 # Dump the raw AST for src/tests/example.ts (for engine.ts development)
 bun run src/scripts/tree.ts
+
+# Watch the engine walk a snippet, step by step
+bun run src/scripts/trace.ts 'const a = b; const b = 2;'
 
 # Run the parse+link pipeline against src/tests without the CLI/viewer
 bun run src/scripts/debug.ts
