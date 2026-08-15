@@ -63,7 +63,7 @@ const LABEL: Record<string, string> = {
 };
 
 console.log(`\nsource:  ${snippet}`);
-console.log(`offset:  ${ruler(snippet)}\n`);
+console.log(`\noffset:  ${ruler(snippet)}\n`);
 
 for (const event of events) {
     const label = (LABEL[event.kind] ?? event.kind).padEnd(8);
