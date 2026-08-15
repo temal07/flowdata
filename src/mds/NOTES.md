@@ -20,6 +20,7 @@ Static analysis engine for TypeScript/JavaScript. Parses source into an AST, res
 | Automated tests                              | ⏳ Partial — `bun test`, engine only  |
 | Method-call resolution                       | ✅ Done — name-only, receiver ignored |
 | Forward references                           | ✅ Done — deferred lookup, see gap 2  |
+| Reassignment (`x = foo()`)                   | ✅ Done — not destructuring, see gap 5|
 | MCP wrapper                                  | ⏳ Planned                            |
 
 
@@ -48,6 +49,8 @@ Most of these are guarded by `bun test` (`src/tests/engine.test.ts`); the rest w
 **Forward references resolve.** `const a = b; const b = 2` gives `b` feeds `a`, and `foo(); function foo(p) {}` records the call as a use of `foo`. A use that can't resolve when the walk reaches it is retried after the walk instead of being dropped — see gap 2. Still correctly scoped: `{ const y = 1; } const z = y` produces nothing, because the block had closed.
 
 **Loop bodies see the loop variable.** `for (let i = 0; i < 3; i++) { const b = i }` gives `i` feeds `b`. This looked like a hoisting problem and wasn't — see the first bullet under gap 2.
+
+**Reassignment produces edges.** `let x; x = foo()` gives `foo` feeds `x`, and so does `x += foo()`. Assignments nested in an expression restore the enclosing target rather than clearing it, so `const a = (x = foo()) + bar()` still gets `bar` feeds `a`. Destructuring assignment is the exception — see gap 5.
 
 ---
 
@@ -134,13 +137,23 @@ Nested patterns and rest elements fall out for free, since `collectPatternNames`
 
 **Behavior change worth knowing:** names are now pushed per declarator instead of all up front, so a forward reference *within one statement* — `const a = () => b, b = 2` — no longer resolves. That reading was accidental (it relied on `b` being pushed before `a`'s initializer was walked), and matches gap 2, which is where forward references belong.
 
-### 5. Reassignment isn't tracked
+### 5. Reassignment isn't tracked — ✅ RESOLVED
 
-Only `const`/`let`/`var` initializers set a feed target. A bare `AssignmentExpression` sets nothing.
+Only `const`/`let`/`var` initializers set a feed target, so a bare `AssignmentExpression` set nothing and `let x; x = foo()` produced no edge at all.
 
-```ts
-let x; x = foo();   // no edge at all
-```
+Worth being precise about what was broken, because the filing here was misleading: **both identifiers already resolved.** `x` found its declaration and `foo` found its function; each got a `Use` recorded. The only thing missing was the `feeds` stamp, because nothing outside a declarator's initializer ever pointed `currentFeedTargets` anywhere. So the fix belonged in the walk's feed-target bookkeeping, nowhere near `lookup`.
+
+The new `AssignmentExpression` branch does for `x = foo()` what `VariableDeclaration` does for `const x = foo()` — save, point `currentFeedTargets` at the thing being written, walk the right-hand side, restore. Three decisions inside it, each with a test:
+
+- **`left` is walked before the target is set.** After would stamp the write as flowing into itself, so `x = 1` would emit `x -> x`.
+- **When `left` can't be named, the enclosing target passes through rather than being cleared.** `o.p = foo()` and `undeclared = foo()` are the same situation: we can't say where the *write* lands, but that says nothing about where the expression's own value goes, and `const a = (o.p = foo())` really does put foo's result in `a`. Clearing to `[]` would assert "flows nowhere", which is a stronger claim than the truth.
+- **Compound operators need no special case.** `x += foo()` still lands foo's value in `x`, so the target is identical, and `x` genuinely *is* read there, which walking `left` normally already records.
+
+Two things it does by hops rather than directly, both intentional and both tested. Chained assignment `x = y = foo()` gives `foo -> y` and `y -> x` rather than a direct `foo -> x`; and a nested assignment `const a = (x = foo())` gives `foo -> x` and `x -> a`. `query.ts` traverses transitively, so the paths are intact either way, and the hop form is arguably more honest about what the source says.
+
+**Not fixed: destructuring assignment.** `[a, b] = foo()` and `({ a } = foo())` have `ArrayPattern`/`ObjectPattern` on the left, and the branch only names an `Identifier`, so they fall through to the pass-through case and emit no edge. `collectPatternNames` is the wrong tool — it *declares* names, and these already exist — so this needs a sibling that collects leaf identifiers and looks each one up. Rare enough in real code to leave.
+
+The wider imprecision underneath all of this is that variables aren't versioned. `let x = expensive(); x = foo(); const a = x` records both `expensive -> x` and `foo -> x`, so a forward trace from `expensive` reaches `a` even though that value was overwritten. Fixing it means SSA-style renaming, which is a much larger change than gap 5 was.
 
 ### 6. Property keys were treated as references — ✅ RESOLVED
 
@@ -198,10 +211,10 @@ So: do the two together, as one change, or not at all. Worth measuring the frequ
 
 ## Next up
 
-1. **Reassignment** (gap 5) — `x = foo()` sets no feed target at all. Smallest remaining, and the only `test.todo` left. The branch belongs on `AssignmentExpression`, not `ExpressionStatement`: the target is `node.left`, and assignment also turns up outside statement position (`const a = (x = foo())`, `while ((m = re.exec(s)))`). Shape it like the `VariableDeclaration` branch — resolve `left`, set `currentFeedTargets`, walk `right`, restore.
-2. **Cross-file test harness** — the blocker named here is gone: `analyse(dir) → Graph` now exists in `analyse.ts`, so there is a function to call. The fixture directory and the tests themselves still aren't written. This is what unblocks gap 7.
-3. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all?
-4. **Shadowing + call-site resolution together** (gap 8, and the receiver half of gap 1) — the identifier half is a one-line change that already measures clean; it's the `CallExpression` lookup that has to move with it. Measure the frequency first.
+1. **Cross-file test harness** — now the smallest real gap. The blocker named here is gone: `analyse(dir) → Graph` exists in `analyse.ts`, so there is a function to call. The fixture directory and the tests themselves still aren't written, and every engine test to date runs through `collectVariables` on a single string — nothing exercises linking. This is what unblocks gap 7.
+2. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all?
+3. **Shadowing + call-site resolution together** (gap 8, and the receiver half of gap 1) — the identifier half is a one-line change that already measures clean; it's the `CallExpression` lookup that has to move with it. Measure the frequency first.
+4. **Destructuring assignment** (remainder of gap 5) — `[a, b] = foo()` needs a lookup-per-leaf sibling to `collectPatternNames`. Small, but rare enough in real code that it can wait for evidence.
 5. **MCP wrapper** — serve the graph to agents once coverage is trustworthy.
 
 Still worth measuring, on a real repo: what fraction of uses resolve, what fraction of call sites resolve, and how often two same-named methods collide within one file. The last decides whether gap 1's ignored receiver needs revisiting. The first is nearly free now — `collectVariables` already counts the uses that survive the retry unresolved; making that a `PendingUse[]` instead of a number would name them too.
