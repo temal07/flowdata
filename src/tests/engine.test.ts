@@ -501,6 +501,72 @@ test("only local imports count as unlinked, not package imports", async () => {
     await rm(dir, { recursive: true, force: true });
 });
 
+// Gap 16 — a call to an imported function used to drop every argument. The
+// callee resolved to the local import binding, which has no `params`, so
+// `currentFeedTargets` became `[]` and the interprocedural chain stopped dead
+// at the file boundary. On Hono that was 272 call sites. The fix defers the
+// feed: the placeholder carries a negative `start` (no real declaration has
+// one — starts are byte offsets), and `analyse` rewrites it once the import
+// has been linked to the file that actually declares the function.
+//
+// These have to go through `analyse`; `collectVariables` sees one file and
+// cannot express the gap at all.
+async function crossFileEdges(files: Record<string, string>): Promise<string[]> {
+    const dir = await fixtureDir(files);
+    const { graph } = await analyse(dir);
+    const nameById = new Map(graph.nodes.map((n) => [n.id, n.name]));
+    const names = graph.edges.map((e) => `${nameById.get(e.source)} -> ${nameById.get(e.target)}`);
+    await rm(dir, { recursive: true, force: true });
+    return names.sort();
+}
+
+test("an argument to an imported function reaches its parameter", async () => {
+    expect(await crossFileEdges({
+        "util.ts": `export function greet(name) { return name }`,
+        "main.ts": `import { greet } from "./util"; const who = "ada"; greet(who);`,
+    })).toContain("who -> name");
+});
+
+test("arguments to an imported function map by position", async () => {
+    expect(await crossFileEdges({
+        "util.ts": `export function pair(a, b) { return a }`,
+        "main.ts": `import { pair } from "./util"; const x = 1; const y = 2; pair(x, y);`,
+    })).toEqual(["x -> a", "y -> b"]);
+});
+
+// The design's safety property: an unresolved placeholder keeps its negative
+// start, which can't match any node id, so step 4's existing guard drops it.
+// Getting this wrong produces no edge — never a wrong one.
+test("an import that resolves to nothing produces no edge and no crash", async () => {
+    expect(await crossFileEdges({
+        "main.ts": `import { greet } from "./nowhere"; const who = "ada"; greet(who);`,
+    })).toEqual([]);
+});
+
+test("an argument with no matching parameter is dropped, not misrouted", async () => {
+    expect(await crossFileEdges({
+        "util.ts": `export function one(a) { return a }`,
+        "main.ts": `import { one } from "./util"; const p = 1; const q = 2; one(p, q);`,
+    })).toEqual(["p -> a"]);
+});
+
+// Each call site and each argIndex needs its own placeholder. Share one and
+// these two tests are what catches it — the first would collapse to a single
+// edge, the second would cross-wire s and t onto the same parameter.
+test("two calls to the same imported function both feed its parameter", async () => {
+    expect(await crossFileEdges({
+        "util.ts": `export function id(v) { return v }`,
+        "main.ts": `import { id } from "./util"; const m = 1; const n = 2; id(m); id(n);`,
+    })).toEqual(["m -> v", "n -> v"]);
+});
+
+test("two imported functions keep their arguments separate", async () => {
+    expect(await crossFileEdges({
+        "util.ts": `export function f(a) { return a }\nexport function g(b) { return b }`,
+        "main.ts": `import { f, g } from "./util"; const s = 1; const t = 2; f(s); g(t);`,
+    })).toEqual(["s -> a", "t -> b"]);
+});
+
  // ==== Untested gaps ====
 
 // No `.todo` left: every gap that collectVariables can express now has a test.
