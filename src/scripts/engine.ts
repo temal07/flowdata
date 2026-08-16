@@ -297,7 +297,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
 
             if (binding.source.startsWith(".")) {
                 const importerDir = dirname(binding.file);
-                const resolved = resolve(importerDir, binding.source) + ".ts";
+                const resolved = resolve(importerDir, binding.source);
                 // Reset it to the absolute path, not relative 
                 binding.source = resolved;
             }
