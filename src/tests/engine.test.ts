@@ -1,7 +1,9 @@
 import { test, expect } from 'bun:test';
 import { parse } from "@typescript-eslint/typescript-estree"
 import { collectVariables } from '../scripts/engine';
-import { isProjectSource } from '../scripts/analyse';
+import { isProjectSource, allowsJsx, analyse } from '../scripts/analyse';
+import { tmpdir } from 'os';
+import { rm } from 'fs/promises';
 
 // A function to flatten the messy output into the 
 // thing you want to assert on
@@ -318,6 +320,60 @@ test("ordinary source under lib/ is still project source", () => {
 test("vendored directories and ambient declarations stay excluded", () => {
     expect(isProjectSource("node_modules/foo/index.js")).toBe(false);
     expect(isProjectSource("src/types/global.d.ts")).toBe(false);
+});
+
+// Gap 13 — the glob has always matched `.tsx`/`.jsx`, but `parse` was never
+// told, so `<div>` was read as a less-than. `.ts` has to stay false: there
+// `<T>expr` is a type assertion, which is the whole reason TypeScript splits
+// the two extensions.
+test("JSX is enabled for every extension except .ts", () => {
+    expect(allowsJsx("a.tsx")).toBe(true);
+    expect(allowsJsx("a.jsx")).toBe(true);
+    expect(allowsJsx("a.js")).toBe(true);
+    expect(allowsJsx("a.ts")).toBe(false);
+});
+
+// Gaps 13 and 14, end to end. These are the first tests that run `analyse`
+// rather than `collectVariables`, because neither gap is reachable from a
+// source string — one is about a file extension and the other about surviving
+// a file. Fixtures are written to a temp dir rather than committed: a
+// deliberately unparseable `.ts` in the repo would fail `tsc --noEmit`.
+async function fixtureDir(files: Record<string, string>): Promise<string> {
+    const dir = `${tmpdir()}/flowdata-test-${crypto.randomUUID()}`;
+    for (const [name, body] of Object.entries(files)) {
+        await Bun.write(`${dir}/${name}`, body);
+    }
+    return dir;
+}
+
+test("one unparseable file does not take the whole run with it", async () => {
+    const dir = await fixtureDir({
+        "good.ts": `function foo(){ return 1 } const x = foo();`,
+        "broken.ts": `function ( { { const =`,
+    });
+    const { filesAnalysed, skipped, graph } = await analyse(dir);
+
+    expect(filesAnalysed).toBe(1);
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]!.file).toEndWith("broken.ts");
+    expect(skipped[0]!.reason.length).toBeGreaterThan(0);
+    // the good file still produced a graph — a degraded result, not no result
+    expect(graph.nodes.map((n) => n.name)).toContain("foo");
+
+    await rm(dir, { recursive: true, force: true });
+});
+
+test("a .tsx file is analysed rather than failing to parse", async () => {
+    const dir = await fixtureDir({
+        "view.tsx": `const cls = "box"; const el = <div className={cls}>hi</div>;`,
+    });
+    const { filesAnalysed, skipped, graph } = await analyse(dir);
+
+    expect(skipped).toHaveLength(0);
+    expect(filesAnalysed).toBe(1);
+    expect(graph.nodes.map((n) => n.name)).toContain("cls");
+
+    await rm(dir, { recursive: true, force: true });
 });
 
  // ==== Untested gaps ====
