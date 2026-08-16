@@ -84,6 +84,22 @@ function nodeId(file: string, start: number): string {
   return `${file}:${start}`;
 }
 
+/**
+ * Analyzes all source files in the given project directory, building a comprehensive
+ * data flow graph of declarations, uses, and flow connections (feeds/returns/edges).
+ *
+ * @param {string} projectDir - The path to the root directory to be analyzed.
+ * @returns {Promise<{
+ *   graph: Graph,                                 // The constructed data flow graph.
+ *   filesAnalysed: number,                        // Number of files successfully analyzed.
+ *   lookups: {                                    // Stats on identifier lookups.
+ *     resolved: number,                           // Identifiers resolved to a declaration.
+ *     unresolved: number,                         // Identifiers not resolved.
+ *     external: number                            // Identifiers resolved as external (globals).
+ *   },
+ *   skipped: { file: string, reason: string }[]   // Files that could not be parsed and why.
+ * }>}
+ */
 export async function analyse(projectDir: string): Promise<{
   graph: Graph,
   filesAnalysed: number,
