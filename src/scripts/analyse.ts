@@ -1,7 +1,7 @@
 import { collectVariables } from "./engine";
 import { parse } from "@typescript-eslint/typescript-estree";
 import { Glob } from "bun";
-import type { Graph, GraphEdge, Results } from "./types";
+import type { Binding, Graph, GraphEdge, Results } from "./types";
 import { isAbsolute, resolve } from "path";
 
 /**
@@ -219,6 +219,9 @@ export async function analyse(projectDir: string): Promise<{
   // counts specifiers
   let unlinkedImports = 0;
 
+  /** Gap 16: placeholder node id → the parameter it turned out to mean. */
+  const deferredFeedResolutions = new Map<string, Binding>();
+
   for (const fileResults of Object.values(treeResults)) {
     for (const binding of fileResults.declarations) {
       // disregard non-import bindings
@@ -242,7 +245,46 @@ export async function analyse(projectDir: string): Promise<{
       );
 
       if (!realDec) continue;
+
+      // Gap 16: this import is now linked, so any call site that deferred its
+      // argument→parameter feed can be answered. Record the answer keyed by the
+      // placeholder's file+start; the feed entries themselves are patched in one
+      // pass below, because `use.feeds` holds copies rather than the placeholder.
+      for (const d of fileResults.deferredCallFeeds) {
+        if (d.callee !== binding) continue;
+        const realParam = realDec.params?.[d.argIndex];
+        if (!realParam) continue;
+        // Set the key value pair HERE ("file.ts:-1": realParam (Binding))
+        deferredFeedResolutions.set(nodeId(binding.file, d.id), realParam);
+      }
+
       realDec.uses.push(...binding.uses);
+    }
+  }
+
+  // Step 2b (gap 16): rewrite the deferred feed entries now that every import
+  // that could be linked has been. One pass over every use rather than a scan
+  // per deferral — there are far more uses than deferrals, and this way the
+  // cost is paid once. A placeholder with no resolution is left as it is: its
+  // negative start can't match any node id, so step 4's `nodeIds.has(target)`
+  // guard drops it and the call site simply produces no edge, exactly as
+  // before this gap was fixed.
+  for (const fileResults of Object.values(treeResults)) {
+    for (const declaration of fileResults.declarations) {
+      for (const use of declaration.uses) {
+        if (!use.feeds) continue;
+        for (const fed of use.feeds) {
+          // if fed.start < 0, this is the <blank> that we set in engine.ts
+          if (fed.start >= 0) continue;
+          // Get the key value pair HERE with the key set above.
+          const realParam = deferredFeedResolutions.get(nodeId(fed.file, fed.start));
+          if (!realParam) continue;
+          fed.name = realParam.name;
+          fed.file = realParam.file;
+          fed.line = realParam.line;
+          fed.start = realParam.start;
+        }
+      }
     }
   }
 
