@@ -666,7 +666,33 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
 
     // Don't recurse into TypeAnnotation since it's just noise
     // and incorrectly puts the variable into uses array.
-    if (node.type === "TSTypeAnnotation") {
+    //
+    // Gap 15 — TSTypeAnnotation alone wasn't enough. It covers `x: T`, but type
+    // space is reachable by several other routes that never pass through an
+    // annotation node, and each one was handing the walker an identifier to
+    // look up in the *value* scope chain:
+    //
+    //   function f<T>(x: T)      TSTypeParameter    — the `<T>` declaration
+    //   const y = z as Foo       TSTypeReference    — every use of a type name
+    //   const x = o as const     TSTypeReference    — yes, `const` is one
+    //   foo<Bar>(1)              TSTypeReference    — call type arguments
+    //   class D implements I     TSClassImplements  — no runtime effect
+    //
+    // On Hono `T` was the single most unresolved name (120), with E, P, S,
+    // BasePath and JSX behind it — and where a value of the same name exists,
+    // the leak isn't just noise, it's a phantom use pointing at a variable the
+    // type never referred to.
+    //
+    // What must NOT be skipped, and isn't: `class D extends B` puts `B` on the
+    // ClassDeclaration itself, and a superclass is a real runtime value. Same
+    // for the left-hand side of `as` / `satisfies` / `!`, which live on their
+    // own nodes rather than inside the type. Only the type halves go.
+    if (
+        node.type === "TSTypeAnnotation" ||
+        node.type === "TSTypeParameter" ||
+        node.type === "TSTypeReference" ||
+        node.type === "TSClassImplements"
+    ) {
         return;
     }
 
