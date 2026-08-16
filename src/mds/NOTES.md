@@ -14,18 +14,18 @@ States are judged against *arbitrary* input, not against this repo — the Hono 
 | Per-file extraction (declarations + uses)    | ✅ Done                                    |
 | Scope resolution (functions, arrows, blocks) | ✅ Done                                    |
 | Intraprocedural `feeds` edges (v1.1)         | ✅ Done                                    |
-| Argument → parameter flow (v1.2)             | ✅ Done — direct and method calls          |
+| Argument → parameter flow (v1.2)             | ⚠️ 26.6% of call sites wire — see gap 16   |
 | Return capture (`returns` on function nodes) | ✅ Done                                    |
 | Graph output + local viewer (`flow <dir>`)   | ✅ Done                                    |
 | Query/traversal layer (`query <name>`)       | ✅ Done — forward trace only, no backward  |
 | Forward references                           | ✅ Done — deferred lookup, see gap 2       |
 | Reassignment (`x = foo()`)                   | ✅ Done — not destructuring, see gap 5     |
-| Method-call resolution                       | ⚠️ Name-only — 8.0% collide, see gap 1     |
+| Method-call resolution                       | ⚠️ Name-only — 0.4% ambiguous live, gap 1  |
 | Resolution reporting (`Results.lookups`)     | ⚠️ Counts, but globals list is thin        |
 | Cross-file linking (imports → declarations)  | ✅ 1 of 1,505 unlinked on Hono, and counted |
 | Runs on an arbitrary repo                    | ✅ Survives bad files, reports them        |
 | JSX / `.tsx` support                         | ✅ Done — `.ts` stays non-JSX, see gap 13  |
-| Automated tests                              | ⏳ Partial — 56 tests, linking now covered |
+| Automated tests                              | ⏳ Partial — 62 tests, linking now covered |
 | MCP wrapper                                  | ⏳ Planned — see item 6 in Next up         |
 
 
@@ -43,7 +43,7 @@ Most of these are guarded by `bun test` (`src/tests/engine.test.ts`); the rest w
 
 **Imports link across files.** `import { greet } from "./util"` finds `util/index.ts`, `util.ts`, or `util.js` — whichever the project actually has — and moves the uses recorded against the local import binding onto the real declaration, so the edge crosses the file boundary. Local imports that don't link are counted rather than dropped. See gap 7.
 
-**Full interprocedural chain.** `function foo(p) { return p } const z = 2; const a = foo(z)` produces `z` feeds `p`, `foo.returns = [p]`, and `foo` feeds `a`. `query.ts` stitches these into one path — this is the v1.2 goal, and it is done. (The old note saying flow is "intraprocedural only" was stale.)
+**Full interprocedural chain, across files.** `function foo(p) { return p } const z = 2; const a = foo(z)` produces `z` feeds `p`, `foo.returns = [p]`, and `foo` feeds `a`. `query.ts` stitches these into one path — this is the v1.2 goal, and it is done. (The old note saying flow is "intraprocedural only" was stale.) Imported functions carry flow too, as of gap 16 — `greet(who)` reaches `greet`'s parameter in the file that declares it.
 
 **Nested calls chain.** `const a = wrap(id(z))` gives `z` feeds `p` (id's param), `id` feeds `q` (wrap's param), `wrap` feeds `a`. The argument walk recurses properly.
 
@@ -424,6 +424,63 @@ Same family as gaps 6, 9 and 12 — type space bleeding into value space — and
 
 Distinct from gap 3's remainder, which asks whether type *references* should resolve at all — this is about type space creating uses in value space, which is wrong under either answer to that question.
 
+### 16. Arguments to an imported function flow nowhere — ✅ RESOLVED
+
+Found and fixed August 16 2026, while measuring the call-site resolution rate — which is the reason that measurement was worth doing.
+
+`CallExpression` resolves the callee against the scope stack and feeds each argument into the matching parameter:
+
+```ts
+const param = calledFunc?.params?.[argIndex];
+currentFeedTargets = param ? [param] : [];
+```
+
+When the callee is imported, `calledFunc` is the local **import binding**. An import binding has no `params` — the real function is in another file — so `currentFeedTargets` becomes `[]` and every argument flows nowhere.
+
+```ts
+// util.ts
+export function greet(name) { return name }
+// main.ts
+import { greet } from "./util";
+const who = "ada";
+greet(who);          // no `who -> name` edge. The chain stops at the file boundary.
+```
+
+**Gap 7 did not fix this, and can't.** Gap 7 moves *uses* onto the real declaration in `analyse` step 2, which runs after every file has been walked. But `calledFunc.params` is read *during* the walk, when the other file may not be parsed yet. Imported values link; imported functions don't carry flow.
+
+**Measured on Hono library code (tests excluded), August 16 2026.** Of 2,549 call sites passing at least one argument:
+
+| outcome | count | share |
+| --- | --- | --- |
+| arguments actually flow into parameters | **405** | 15.9% |
+| callee found but it had no params to feed | 434 | 17.0% |
+| callee name not found at all | 1,710 | 67.1% |
+
+Of the 434 with nothing to feed, **272 are import bindings** — by far the largest single cause. (The rest: 80 `param`, 77 `variable`, 4 `catch`, 1 `function` — calling something whose definition the engine never sees as a function.)
+
+The 67.1% overstates the gap: 1,129 of those 1,710 (66.0%) are `KNOWN_GLOBALS` built-ins — `push`, `forEach`, `replace`, `charCodeAt` — where there was never anything to find. Excluding them the addressable population is 1,420, of which 405 wire: **28.5%**.
+
+**The fix reuses gap 2's deferral**, with one architectural wrinkle that cost a wrong first attempt. The call site can't be resolved during the walk, so it's recorded and resolved once every file is parsed — but *what* you record matters:
+
+> **`use.feeds` holds flat copies, not references.** The Identifier branch does `use.feeds = currentFeedTargets.map(t => ({ name, file, line, start }))`. The copy is taken at stamp time, so handing the walk a placeholder `Binding` and mutating it later changes nothing — the copies were already made.
+
+So the deferral travels in the placeholder's *fields* rather than by object identity. A placeholder gets a **negative `start`**, which no real declaration can have (starts are byte offsets), plus the importing file's path. `file + start` is already the graph's node id, so this is a node id that can only mean "not resolved yet". `analyse` then:
+
+1. **step 2** — when an import links, records `nodeId(file, id) → the real parameter` in a map
+2. **step 2b** — one pass over every use, rewriting any feed entry whose `start` is negative
+
+One pass over all uses rather than a scan per deferral: there are far more uses than deferrals, so the cost is paid once.
+
+**The failure mode is a missing edge, never a wrong one.** An unresolved placeholder keeps its negative start, which can't match any node id, so step 4's existing `if (!nodeIds.has(target)) continue` drops it and the call site produces nothing — exactly the behaviour before the fix. That guard is what makes the design safe rather than merely clever.
+
+**Result on Hono:** graph edges **7,444 → 8,471 (+1,027, +13.8%)** over all 309 files. On library code, the 272 import call sites that dropped their arguments now defer instead, taking the share of arg-passing call sites with a parameter to feed from **15.9% to 26.6%**. (Two populations again — the edge count is all files, the call-site rate excludes tests.)
+
+Six tests cover it in `engine.test.ts`, five of which fail without the fix. The sixth — an import that resolves to nothing produces no edge — passes either way by construction; it guards the safety property rather than proving the feature.
+
+**Still open:** default and namespace imports where the local name differs from the exported one (`import foo from "./x"` against `export default function bar`). Step 2 matches on `param.name === binding.name`, so those never link, and this gap inherits that limitation from gap 7.
+
+**This reorders the call-site work.** Gap 1's receiver problem was prioritised on an 8.0% collision rate, but that measured names colliding anywhere within a file. Measured at live call sites, ambiguity is **9 of 2,549 — 0.4%**, because the open scope chain holds far fewer declarations than the whole file does. That is a lower bound (the counter reads the stack at walk time, so declarations the walk hasn't reached yet aren't counted), but it is 30× smaller than this gap either way. Fix the imports first: it adds correct edges, where the receiver work rewrites resolution and can produce wrong ones.
+
 **The fix is three node types, and the interesting part is what it must *not* skip.** Mapping every identifier that survives the existing `TSTypeAnnotation` early-return showed the leaks all sit under `TSTypeParameter` (the `<T>` declaration), `TSTypeReference` (every use of a type name — `as Foo`, `as const`, `new Map<string, Foo>()`), and `TSClassImplements`. Those three now return alongside `TSTypeAnnotation`.
 
 Against that, the value-carrying identifiers live on separate nodes and are untouched:
@@ -459,7 +516,7 @@ The edge count *falling* is the point — 106 phantom edges removed, the same sh
 
 Gap 7 came off this list on August 16 — it was item 2, and it was done ahead of item 1 because the measured hole was more than twice as large (24.3% of specifiers vs an 8.0% collision rate) and the change only *adds* edges, where call-site resolution rewrites how callees resolve and can produce wrong ones.
 
-1. **Call-site resolution** — gap 1's ignored receiver and gap 8's shadowing, as one change. Gap 8's entry explains why they can't be separated: deferring identifier lookups fixes shadowing but leaves `CallExpression` resolving the callee eagerly, so the graph would claim a call is the inner function while its argument flows into the outer one's parameter. With gap 15 closed this is the **only known source of wrong edges** left — everything else on this list is a missing edge. The collision rate is now measured at 8.0% on Hono, which settles the "is it worth it" question in gap 1. Cheaper than type inference: restrict the name-only match to method declarations, and use `KNOWN_GLOBALS` so a global receiver marks the call external rather than binding `Bun.file()` to a local `file`.
+1. **Call-site resolution** — gap 1's ignored receiver and gap 8's shadowing, as one change. Demoted below gap 16 on August 16: measured ambiguity at live call sites is 0.4%, not the 8.0% within-file collision rate this was prioritised on. Gap 8's entry explains why they can't be separated: deferring identifier lookups fixes shadowing but leaves `CallExpression` resolving the callee eagerly, so the graph would claim a call is the inner function while its argument flows into the outer one's parameter. With gap 15 closed this is the **only known source of wrong edges** left — everything else on this list is a missing edge. The collision rate is now measured at 8.0% on Hono, which settles the "is it worth it" question in gap 1. Cheaper than type inference: restrict the name-only match to method declarations, and use `KNOWN_GLOBALS` so a global receiver marks the call external rather than binding `Bun.file()` to a local `file`.
 2. **Extend `KNOWN_GLOBALS`** — the cheapest coverage left, and the residue analysis is what surfaced it. Of Hono's 1,017 unresolved lookups, roughly half are names nothing in the project declares (`isArray` 53, `charCodeAt` 40, `create` 31, `at` 29, `Uint8Array` 15) — a thin globals list, not a walker failure. Editing a list would take the rate to about 95%. The other half was gap 7, now closed.
 3. **Cross-file test harness** — mostly done as of gap 7. Gaps 13/14 added the first `analyse`-on-a-temp-dir tests; gap 7 added `fixtureDir` fixtures with real directory structure and the first assertions on cross-file edges. What's left is breadth: re-export chains, default exports, and `export * from`, none of which is exercised.
 4. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all? Gap 12 settled that type *bodies* are skipped; this is the separate question of whether `const x: Result` should record a use of `Result`.
