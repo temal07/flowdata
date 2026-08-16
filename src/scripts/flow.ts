@@ -20,7 +20,7 @@ if (!targetArg) {
 
 const projectDir = resolve(process.cwd(), targetArg);
 
-const { graph, filesAnalysed, skipped } = await analyse(projectDir);
+const { graph, filesAnalysed, skipped, unlinkedImports } = await analyse(projectDir);
 // Serialized once and used twice: written to disk below, and served verbatim
 // to the viewer. Left compact deliberately — indenting this graph costs ~45%
 // more bytes (16.2MB vs 11.2MB on this repo) on both paths, and nothing reads
@@ -43,6 +43,16 @@ if (skipped.length > 0) {
     }
     if (skipped.length > 3) console.log(`  ...and ${skipped.length - 3} more`);
 }
+
+// The same argument as the skipped block above, one level down: a missing
+// cross-file edge is indistinguishable from two things that genuinely never
+// touched. Counted per specifier, and only local imports — `from "zod"` is
+// outside the project and skipping it is correct, so it is not in this number.
+if (unlinkedImports > 0) {
+    console.log(`flow: ${unlinkedImports} import specifier(s) point inside the project ` +
+        `but could not be linked — those edges are missing from the graph.`);
+}
+
 console.log(`flow: wrote graph to ${outPath}`);
 
 // Serve the graph viewer and the graph JSON file. and open it in the browser.
