@@ -152,6 +152,13 @@ export interface Results {
          *  method (`console`, `Bun`, `push`) that this project never declares. */
         external: number;
     };
+    /**
+     * Call sites whose callee (e.g. greet(name)) was an import, so the 
+     * params to feed weren't knowable during walk-time. Resolved in step 2
+     * of analyse.ts, once the import's been linked to the file that actually 
+     * declares the function.
+     */
+    deferredCallFeeds: { callee: Binding; argIndex: number; id: number }[];
 }
 
 /**

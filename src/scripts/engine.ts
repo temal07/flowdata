@@ -526,7 +526,33 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             for (let argIndex = 0; argIndex < node.arguments.length; argIndex++) {
                 save = currentFeedTargets;
                 const param = calledFunc?.params?.[argIndex];
-                currentFeedTargets = param ? [param] : [];
+                let target = param;
+
+                // Gap 16: the callee is imported, so the parameter to feed lives
+                // in a file that may not be parsed yet. Stand in for it with a
+                // placeholder carrying a *negative* start — no real declaration
+                // has one, since starts are byte offsets — and let analyse
+                // rewrite it once the import has been linked.
+                //
+                // The id has to travel in the placeholder's own fields rather
+                // than by object identity: `use.feeds` stores flat copies of
+                // name/file/line/start taken at stamp time (see the Identifier
+                // branch), so the placeholder object itself is gone by the time
+                // analyse runs. file+start is the same key the graph already
+                // uses for nodes, so a negative start is a key that can only
+                // mean "not resolved yet".
+                if (!param && calledFunc?.kind === "import") {
+                    // Give it a fake ID to resolve later (negative, since negative 
+                    // positions do not exist in AST)
+                    const id = -(results.deferredCallFeeds.length + 1);
+                    target = {
+                        name: calleeName, kind: "param", varType: "N/A",
+                        file: currentFile, start: id, line: 0, role: "declaration", uses: [],
+                    };
+                    results.deferredCallFeeds.push({ callee: calledFunc, argIndex, id });
+                }
+
+                currentFeedTargets = target ? [target] : [];
                 const arg = node.arguments[argIndex];
                 if (arg) walkVariables(arg, results, stack);   // guard: fewer args than params
                 currentFeedTargets = save;
