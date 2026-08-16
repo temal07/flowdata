@@ -1,15 +1,21 @@
 import type { Binding, Kind, Scope, Results, Use } from "./types";
 import { TSESTree } from "@typescript-eslint/typescript-estree";
 import { resolve, dirname } from "path";
+import { KNOWN_GLOBALS } from "./globals";
 // loc gives us line numbers, which is off by default in typescript-estree.
 
 // Define the file
 let currentFile = "";
 
-// Define the variable that is fed
-// A list, not a single binding: `const { a, b } = foo()` has one initializer
-// feeding two declarations at once. Empty means "not in a flow-carrying
-// position", which is what `null` used to mean.
+/**
+ * Any identifier reached from here on flows into these, until the setter puts it
+ * back. `const a = z` opens [a], so `z` feeds `a`; `console.log(z)` opens nothing,
+ * so no edge. Nests — `const a = f(z)` opens [a], then [p] for the argument, so
+ * `z` feeds `p` and `f` feeds `a`. Every setter must restore (see gap 5).
+ *
+ * A list because `const { a, b } = foo()` feeds two. The Identifier branch copies
+ * out of it rather than keeping the Binding — why gap 16 patches feeds by value.
+ */
 let currentFeedTargets : Binding[] = [];
 
 // Define the function the walker is currently in.
@@ -83,50 +89,6 @@ function trace(kind: string, detail: string, depthChange: 0 | 1 | -1 = 0): void 
     if (depthChange === 1) traceDepth++;
 }
 
-/**
- * Names that no project declares and every project uses. A use of `console`
- * failing to resolve is not the engine falling short — there was never
- * anything to find. Lumping these in with real misses put a permanent floor
- * under the resolution rate (on this repo `console` alone was 21 of 551) and
- * hid regressions behind it, so they get counted as `external` instead.
- *
- * Built-in *method* names are in here too — `push`, `map`, `log`. Those reach
- * the lookup because gap 1 resolves method calls by name, and nothing in a
- * project declares `push`. Exported because that same set is half of gap 1's
- * fix: knowing `Bun` is external is what should stop `Bun.file()` binding to
- * a local function called `file`.
- *
- * Deliberately not exhaustive, and deliberately not a correctness mechanism —
- * a name missing from here is counted as unresolved, which is the safe error.
- * Anything genuinely declared in the source still shadows this: the set is
- * only consulted after the scope chain has already come up empty.
- */
-export const KNOWN_GLOBALS = new Set([
-    // Runtime objects and namespaces
-    "globalThis", "console", "process", "Bun", "window", "document", "navigator",
-    "performance", "crypto", "localStorage", "sessionStorage", "fetch", "Buffer",
-    "require", "module", "exports", "__dirname", "__filename", "Intl",
-    // Constructors and namespaces from the language itself
-    "Object", "Array", "String", "Number", "Boolean", "Symbol", "BigInt", "Math",
-    "JSON", "Date", "RegExp", "Function", "Promise", "Map", "Set", "WeakMap",
-    "WeakSet", "Proxy", "Reflect", "ArrayBuffer", "DataView", "Error", "TypeError",
-    "RangeError", "SyntaxError", "ReferenceError", "URL", "URLSearchParams",
-    "Response", "Request", "Headers", "Blob", "File", "FormData", "AbortController",
-    "TextEncoder", "TextDecoder", "WebSocket", "Event", "CustomEvent",
-    // Free functions and values
-    "parseInt", "parseFloat", "isNaN", "isFinite", "structuredClone",
-    "setTimeout", "clearTimeout", "setInterval", "clearInterval", "queueMicrotask",
-    "encodeURIComponent", "decodeURIComponent", "NaN", "Infinity", "undefined",
-    // Built-in method names, reached via gap 1's name-only method resolution
-    "push", "pop", "shift", "unshift", "slice", "splice", "concat", "join",
-    "map", "filter", "reduce", "forEach", "find", "findIndex", "some", "every",
-    "sort", "reverse", "includes", "indexOf", "keys", "values", "entries",
-    "has", "get", "set", "add", "delete", "clear", "then", "catch", "finally",
-    "toString", "valueOf", "trim", "split", "replace", "match", "test", "exec",
-    "startsWith", "endsWith", "padStart", "padEnd", "repeat", "charAt",
-    "toLowerCase", "toUpperCase", "stringify", "parse", "log", "warn", "error",
-    "exit", "resolve", "reject", "all", "from", "of", "assign", "freeze",
-]);
 
 /** Innermost-scope-outward lookup of `name` or undefined if there is nothing binding to it */
 function lookup(name: string, chain: Scope[]): Binding | undefined {
@@ -197,7 +159,11 @@ export function collectVariables(node: TSESTree.Node, file: string): Results {
     // reset so that the pending uses from one file does not
     // leak into another file.
     pendingUses = [];
-    const results: Results = { declarations: [], lookups: { resolved: 0, unresolved: 0, external: 0 } };
+    const results: Results = { 
+        declarations: [], 
+        lookups: { resolved: 0, unresolved: 0, external: 0 }, 
+        deferredCallFeeds: [],
+    };
     // A stack to know which scope we're in, so that 2 or more variables with
     // the same name can be found without ambiguity. Created fresh per call so
     // repeated invocations don't leak declarations/uses from earlier walks.
