@@ -7,22 +7,26 @@ Static analysis engine for TypeScript/JavaScript. Parses source into an AST, res
 ## Status
 
 
-| Feature                                      | State                                |
-| -------------------------------------------- | ------------------------------------ |
-| Per-file extraction (declarations + uses)    | ✅ Done                               |
-| Scope resolution (functions, arrows, blocks) | ✅ Done                               |
-| Cross-file linking (imports → declarations)  | ✅ Done — `.ts` only                  |
-| Intraprocedural `feeds` edges (v1.1)         | ✅ Done                               |
-| Argument → parameter flow (v1.2)             | ✅ Done — direct and method calls     |
-| Return capture (`returns` on function nodes) | ✅ Done                               |
-| Graph output + local viewer (`flow <dir>`)   | ✅ Done                               |
-| Query/traversal layer (`query <name>`)       | ✅ Done — forward trace               |
-| Automated tests                              | ⏳ Partial — `bun test`, engine only  |
-| Method-call resolution                       | ✅ Done — name-only, receiver ignored |
-| Forward references                           | ✅ Done — deferred lookup, see gap 2  |
-| Reassignment (`x = foo()`)                   | ✅ Done — not destructuring, see gap 5|
-| Resolution reporting (`Results.lookups`)     | ✅ Done — 90.8% on `src/scripts`      |
-| MCP wrapper                                  | ⏳ Planned                            |
+States are judged against *arbitrary* input, not against this repo — the Hono case study is what that distinction cost. A row reading ✅ means it holds up on code nobody here wrote.
+
+| Feature                                      | State                                     |
+| -------------------------------------------- | ----------------------------------------- |
+| Per-file extraction (declarations + uses)    | ✅ Done                                    |
+| Scope resolution (functions, arrows, blocks) | ✅ Done                                    |
+| Intraprocedural `feeds` edges (v1.1)         | ✅ Done                                    |
+| Argument → parameter flow (v1.2)             | ✅ Done — direct and method calls          |
+| Return capture (`returns` on function nodes) | ✅ Done                                    |
+| Graph output + local viewer (`flow <dir>`)   | ✅ Done                                    |
+| Query/traversal layer (`query <name>`)       | ✅ Done — forward trace only, no backward  |
+| Forward references                           | ✅ Done — deferred lookup, see gap 2       |
+| Reassignment (`x = foo()`)                   | ✅ Done — not destructuring, see gap 5     |
+| Method-call resolution                       | ⚠️ Name-only — 8.0% collide, see gap 1     |
+| Resolution reporting (`Results.lookups`)     | ⚠️ Counts, but globals list is thin        |
+| Cross-file linking (imports → declarations)  | ❌ 17.8% unlinked on Hono, silent — gap 7  |
+| Runs on an arbitrary repo                    | ✅ Survives bad files, reports them        |
+| JSX / `.tsx` support                         | ✅ Done — `.ts` stays non-JSX, see gap 13  |
+| Automated tests                              | ⏳ Partial — 47 tests, linking untested    |
+| MCP wrapper                                  | ⏳ Planned — see item 6 in Next up         |
 
 
 ---
@@ -76,6 +80,8 @@ Three things this deliberately does **not** do:
   ```
 
   `Bun.file` has nothing to do with the local `file`, and `p` never reaches `n`. This was always true but was buried under gap 9's noise; with reads fixed, unresolved method names (`push` 22, `log` 17, `map` 7 on this repo) are the dominant remaining phantom source. Unlike a missing edge, this one actively misleads `query.ts`. Two cheap mitigations short of type inference: require the match to be `kind === "function"` *and* declared as a method, or keep a known-globals set (gap 11) so `Bun`/`console` receivers are recognised as external and their calls left unresolved.
+
+  **The collision rate is measured, and it is high — the question above is closed.** On Hono (see the case study), **49 of 612 function names collide within a single file: 8.0%**, across 34 of 134 files, with 84 extra declarations. Including test files, 133 of 902 — **14.7%**. Roughly one method name in twelve is ambiguous under name-only resolution, so `.find()` taking the first match is picking wrong at a rate that shows up in real graphs rather than only in contrived snippets. This is now the only known source of wrong edges outstanding; everything else open is a missing edge.
 - **Computed forms are skipped.** `r[k](z)` and `class R { [name]() {} }` have no statically-known name — the identifier there names a *variable holding* the name, so reading it would silently produce a wrong answer. Both bail out on `computed === true`.
 - **Unresolvable member calls now emit no argument edge.** Previously `a.b.c(z)` fell through and `z` picked up the ambient feed target, giving a coarse `z → out`. Now the branch fires, finds nothing, and sets the target to null. This matches how unresolved *plain* calls have always behaved, but it does drop argument edges for object-literal methods and built-ins (`arr.map(fn)`, `str.split(sep)`).
 
@@ -187,6 +193,10 @@ Same computed/non-computed split as gap 1's `MemberExpression` callee and `Metho
 ### 7. Import resolution assumes `.ts`
 
 The resolver appends `.ts` unconditionally, so pure-JS projects extract fine but never link. Directory imports (`./foo` → `./foo/index.ts`) and explicit extensions (`./foo.js` → `./foo.js.ts`) also fail. Fix: try a candidate list of extensions and index files.
+
+**Measured on Hono, August 15 2026 (see the case study): 156 of 879 local imports fail to link — 17.8%**, across 25 distinct paths, every one of them a directory import (`./router/reg-exp-router` wanting `./router/reg-exp-router/index.ts`). So roughly a fifth of the cross-file graph is missing on a normal TypeScript project.
+
+**And it fails silently**, which is the worse half. `analyse` does `if (sourceResults === undefined) continue` — a deliberate skip for package imports, which is right, but it swallows local imports that simply weren't resolved. Nothing distinguishes "this import points outside the project" from "this import points inside the project and the resolver couldn't find it." A consumer sees a graph with no edges there and no reason to doubt it. Counting the second case, the way gap 11 counts unresolved names, costs a line and turns a silent hole into a number.
 
 ### 8. A use resolves to an outer declaration that a later inner one shadows
 
@@ -334,15 +344,98 @@ Whole repo, 12 files: 1061 resolved, 127 unresolved, 89.3%.
 
 What's left of the residue is fully accounted for, with nothing unexplained: `import.meta` (a `MetaProperty`, not an ordinary member expression) and built-in methods missing from `KNOWN_GLOBALS` — `isArray`, `text`, `cwd`, `write`, `serve`, `scan`, `json`. Both cosmetic; neither produces a wrong edge. Adding the missing names is a one-line change whenever the number starts to matter.
 
+### 13. `.tsx` and `.jsx` files can't be parsed — ✅ RESOLVED
+
+`analyse`'s glob matches `**/*.{ts,tsx,js,jsx,mjs,cjs}`, but the parse call is `parse(code, { loc: true, range: true })` — no `jsx` option. Every file containing JSX therefore fails, with errors that don't obviously point at the cause, because `<div>` is being read as a less-than:
+
+```
+jsx/base.test.tsx        '>' expected.
+jsx/streaming.test.tsx   Expression expected.
+jsx/index.test.tsx       Unterminated regular expression literal.
+```
+
+On Hono this was 21 of 309 files, and **every single parse failure was a `.tsx`** — nothing else in the repo failed.
+
+Fixed with `allowsJsx(path)`, which is `true` for every extension the glob matches except `.ts`. That one exception is the whole subtlety: in a `.ts` file `<T>expr` is a type assertion, so enabling JSX there would reinterpret it as an unclosed element and break files that parse today. The `.ts`/`.tsx` split exists in TypeScript for exactly this reason, and the fix just respects it. `.js` files routinely carry JSX and have no type-assertion syntax to lose, so they get it too.
+
+Invisible from self-analysis: this repo contains no JSX, so the glob has been matching a file type the parser was never configured for since the day it was written.
+
+### 14. A single parse failure aborts the whole analysis — ✅ RESOLVED
+
+The per-file `parse` in `analyse` has no error handling, so one unparseable file anywhere in the tree throws out of the loop and the run produces nothing at all. Not a degraded graph — a stack trace and no output.
+
+```
+TSError: Unterminated regular expression literal.
+    at analyse (src/scripts/analyse.ts:105:18)
+```
+
+This was the most serious item on the list, and worse than it looks. The premise of the tool is being pointed at code you didn't write, and the failure mode was total: 308 perfectly good files produced nothing because of the 309th. It also masked gap 13 — the first symptom was a crash, not "21 files skipped."
+
+Fixed with a `try`/`continue` that records `{ file, reason }` into a `skipped` array, now returned from `analyse` alongside `lookups`, and printed by the `flow` CLI when non-empty. Same reasoning as gap 11: a thing the engine could not do should be **visible**, not absent. A graph quietly missing a file is indistinguishable from a graph where that file had nothing to contribute, and only one of those is true.
+
+The parser's first line of complaint is kept, not just the path — that is what would have identified gap 13 in seconds rather than after a bisect ("Unterminated regular expression literal" on a `.tsx` names the cause once you see it beside the filename).
+
+**Verified on Hono, August 15 2026:** 309 files, **0 skipped**, 15,264 nodes, 6,997 edges. It ran to completion on a foreign repo for the first time.
+
+### 15. Type parameters leak into value lookups — ✅ RESOLVED
+
+`TSTypeAnnotation` returns early to keep annotations out of the graph, but type parameters aren't annotations and have no such branch. So `<T>` is walked as an ordinary identifier and looked up in the value scope chain:
+
+```ts
+const T = 9;
+function f<T>(x: T): T { return x }
+//         ^ resolves to the const T above — a phantom use
+const x = { a: 1 } as const;
+//                     ^ a lookup for a "variable" called `const`
+```
+
+Same family as gaps 6, 9 and 12 — type space bleeding into value space — and the phantom-use half is a wrong edge, not just noise.
+
+**`T` was the single most unresolved name in Hono's library code** (120 occurrences), with `E` (40), `P` (17), `S` (14), `BasePath` (15) and `JSX` (14) behind it. This repo barely uses type parameters, which is why twelve gaps went by without it surfacing; Hono is generic-heavy and it went straight to the top of the ranking.
+
+Distinct from gap 3's remainder, which asks whether type *references* should resolve at all — this is about type space creating uses in value space, which is wrong under either answer to that question.
+
+**The fix is three node types, and the interesting part is what it must *not* skip.** Mapping every identifier that survives the existing `TSTypeAnnotation` early-return showed the leaks all sit under `TSTypeParameter` (the `<T>` declaration), `TSTypeReference` (every use of a type name — `as Foo`, `as const`, `new Map<string, Foo>()`), and `TSClassImplements`. Those three now return alongside `TSTypeAnnotation`.
+
+Against that, the value-carrying identifiers live on separate nodes and are untouched:
+
+```ts
+class D extends B implements I {}
+//              ^ B is a real runtime value — keeps its use
+//                          ^ I is type-only — correctly loses it
+const y = z as Foo;   // `z` keeps its use, `Foo` loses it
+const q = z!.a;       // TSNonNullExpression holds the value on its own node
+```
+
+A broader skip — anything named `TS*`, say — would have taken the superclass with it, along with the left-hand side of `as`, `satisfies` and `!`. Guarded by a test asserting `extends` and `implements` behave differently on the same class.
+
+Worth knowing: call type arguments (`foo<Bar>(1)`) never leaked, because the `CallExpression` branch returns before the generic loop reaches `typeArguments`. `new Map<string, Foo>()` did leak, since `NewExpression` has no such branch — which is why the test uses the constructor form.
+
+Still unhandled, and rare enough to leave: `x as typeof y` reaches a `TSTypeQuery` rather than a `TSTypeReference`, so `y` is still looked up. Arguably it should be, since `typeof y` really does name a value.
+
+**Measured on Hono, August 15 2026**, library code (186 files, tests excluded):
+
+| | before gap 15 | after |
+| --- | --- | --- |
+| resolved | 10,897 | 10,536 |
+| unresolved | **1,346** | **1,017** |
+| edges | 2,359 | **2,253** |
+| rate excluding external | 89.0% | **91.2%** |
+
+The edge count *falling* is the point — 106 phantom edges removed, the same shape as gaps 9 and 12. Resolved falls too, because a chunk of what it was counting were phantom resolutions.
+
 ---
 
 ## Next up
 
-1. **Call-site resolution** — gap 1's ignored receiver and gap 8's shadowing, as one change. Gap 8's entry explains why they can't be separated: deferring identifier lookups fixes shadowing but leaves `CallExpression` resolving the callee eagerly, so the graph would claim a call is the inner function while its argument flows into the outer one's parameter. This is now the **only known source of wrong edges** — everything else on this list is missing edges. Cheaper than type inference: restrict the name-only match to method declarations, and use `KNOWN_GLOBALS` so a global receiver marks the call external rather than binding `Bun.file()` to a local `file`.
-2. **Cross-file test harness** — the blocker named here is gone: `analyse(dir) → Graph` exists in `analyse.ts`, so there is a function to call. The fixture directory and the tests themselves still aren't written, and every engine test to date runs `collectVariables` on a single string — nothing exercises linking. Unblocks gap 7, and is the real gate on anything external consuming this.
-3. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all? Gap 12 settled that type *bodies* are skipped; this is the separate question of whether `const x: Result` should record a use of `Result`.
-4. **Destructuring assignment** (remainder of gap 5) — `[a, b] = foo()` needs a lookup-per-leaf sibling to `collectPatternNames`. Small, but rare enough to wait for evidence.
-5. **MCP wrapper** — serve the graph to agents once coverage is trustworthy. Not close: linking is untested (item 2), gap 7 means a JS project links nothing at all and says so silently, `query.ts` has no backward trace, and a graph of this size can't be handed to an agent whole — the surface has to be bounded traversals, not "here is the graph."
+Reordered after the Hono case study, which led with gaps 13, 14 and 15 — all now done. flowdata runs end to end on a foreign repo, which it could not do this morning, and Hono's library code resolves at 91.2%.
+
+1. **Call-site resolution** — gap 1's ignored receiver and gap 8's shadowing, as one change. Gap 8's entry explains why they can't be separated: deferring identifier lookups fixes shadowing but leaves `CallExpression` resolving the callee eagerly, so the graph would claim a call is the inner function while its argument flows into the outer one's parameter. With gap 15 closed this is the **only known source of wrong edges** left — everything else on this list is a missing edge. The collision rate is now measured at 8.0% on Hono, which settles the "is it worth it" question in gap 1. Cheaper than type inference: restrict the name-only match to method declarations, and use `KNOWN_GLOBALS` so a global receiver marks the call external rather than binding `Bun.file()` to a local `file`.
+2. **Import resolution** (gap 7) — 17.8% of Hono's local imports don't link, silently. A candidate list of extensions and index files, plus a count of local imports that failed to resolve so the hole stops being invisible.
+3. **Cross-file test harness** — `analyse(dir) → Graph` exists, so there is a function to call; the fixture directory and the tests still aren't written, and every engine test to date runs `collectVariables` on a single string. Nothing exercises linking. Pairs naturally with item 2, since both need fixtures with real directory structure. Partly started: gaps 13 and 14 added the first two tests that call `analyse` rather than `collectVariables`, writing fixtures to a temp dir so a deliberately unparseable file never lands in the repo and breaks `tsc`.
+4. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all? Gap 12 settled that type *bodies* are skipped; this is the separate question of whether `const x: Result` should record a use of `Result`.
+5. **Destructuring assignment** (remainder of gap 5) — `[a, b] = foo()` needs a lookup-per-leaf sibling to `collectPatternNames`. Small, but rare enough to wait for evidence.
+6. **MCP wrapper** — serve the graph to agents once coverage is trustworthy. Not close, and the case study widened the gap rather than narrowing it: a fifth of cross-file edges are missing and nothing says so (item 2), linking is untested (item 3), `query.ts` has no backward trace, and a 4,700-node graph can't be handed to an agent whole — the surface has to be bounded traversals, not "here is the graph."
 
 **Measured August 15 2026** by calling `analyse()` directly and reading `lookups`. On `src/scripts`, 8 files: **748 resolved, 28 unresolved, 189 external — 96.4%** excluding externals. Whole repo, 12 files, 316 nodes: 89.3%. The progression over one day, same target, as each gap closed:
 
@@ -353,8 +446,58 @@ What's left of the residue is fully accounted for, with nothing unexplained: `im
 
 Most of that was never a coverage problem: gap 11 showed a permanent floor of globals was hiding the real number, and gaps 9 and 12 were one rule — *a non-computed key is a label* — unenforced in two more places. What remains is `import.meta` and a handful of built-in method names, neither of which produces a wrong edge.
 
-**The method that produced all of it is worth keeping.** Run the analysis, then read the unresolved names *by name*. Gap 9 came from reading that list, and so did gap 12. Ranked residue points at systematic bugs in a way an aggregate number never does. Two things still unmeasured: what fraction of *call sites* resolve, and how often same-named methods collide in one file — the second decides how much item 1 actually buys. And every number here is this repo analysing itself; the next measurement should be a codebase nobody here wrote.
+**The method that produced all of it is worth keeping.** Run the analysis, then read the unresolved names *by name*. Gap 9 came from reading that list, and so did gap 12 — and gap 15, on Hono. Ranked residue points at systematic bugs in a way an aggregate number never does.
 
----
+That last line used to read "every number here is this repo analysing itself; the next measurement should be a codebase nobody here wrote." That happened the same day — see the case study below. It cost about twenty minutes and produced three new gaps, two closed questions, and the discovery that `analyse()` does not survive contact with a foreign repo at all. One number is still unmeasured: what fraction of *call sites* resolve.
+
+
+### Tested on an external repo: Hono (https://github.com/honojs/hono) Case Study # 1
+
+**August 15 2026.** Shallow clone, `analyse()` pointed at `src/`. 309 TypeScript files, ~78k lines, zero runtime dependencies — chosen for being pure TS, mid-sized, and written in a style nothing like this repo's: heavy generics, class hierarchies, middleware composition, JSX.
+
+Everything before this was flowdata analysing flowdata: 8 files, one author, one month, one style. The first foreign repo found two total failures in the first thirty seconds, neither of which eight rounds of self-analysis could have surfaced.
+
+#### It did not run
+
+`analyse()` threw and produced nothing. One file failing to parse takes the entire run with it — see gaps 13 and 14. The numbers below come from a throwaway copy patched with `jsx: true` and a per-file `try/catch`, which is the fix those two gaps describe.
+
+#### Numbers, library code only
+
+Test files are excluded here — `expect` (5,874), `toBe` (3,471), `it` (2,508) and `describe` (811) are vitest globals, and including them drags the rate to 60% while saying nothing about the engine. That is a `KNOWN_GLOBALS` shortfall (gap 11's set doesn't know test frameworks), not a resolution failure.
+
+| | flowdata `src/scripts` | Hono `src`, no tests |
+| --- | --- | --- |
+| files | 8 | 186 |
+| nodes | 221 | 4,719 |
+| edges | 150 | 2,359 |
+| time | 31 ms | 262 ms |
+| resolved / unresolved / external | 748 / 28 / 189 | 10,897 / 1,346 / 2,097 |
+| rate excluding external | 96.4% | **89.0%** |
+
+Performance is a non-issue — 186 files in 262 ms, and the graph is a manageable size. The 7-point drop in rate is the interesting part, and reading the residue explains all of it.
+
+#### What the residue said
+
+Ranked unresolved names on library code: `T` (120), `isArray` (53), `header` (51), `E` (40), `charCodeAt` (40), `create` (31), `at` (29), `append` (19), `Uint8Array` (18), `P` (17), `encode` (16), `const` (15), `BasePath` (15), `S` (14), `JSX` (14).
+
+Three groups, and the first was a surprise:
+
+- **`T`, `E`, `P`, `S`, `BasePath`, `JSX`, `const`** — type parameters and type positions leaking into value lookups. New, filed as gap 15. Hono is generic-heavy where this repo barely uses type parameters at all, which is exactly why self-analysis never showed it.
+- **`isArray`, `charCodeAt`, `at`, `append`, `encode`, `substring`, `flat`, `addEventListener`, `Uint8Array`** — built-in methods and globals missing from `KNOWN_GLOBALS`. Cosmetic; no wrong edges. Typed arrays are a notable omission.
+- **`header`, `getConnInfo`, `serveStatic`** — real project names, and the trail that led to the import measurement below.
+
+#### Two open questions, now answered
+
+**Gap 1's collision rate.** Its receiver bullet has said since August 9 to *"revisit if measurement says the collision rate is high."* On Hono: **49 of 612 function names collide within a single file — 8.0%**, across 34 of 134 files, 84 extra declarations. With tests included, 133 of 902, **14.7%**. Roughly one method name in twelve is ambiguous under name-only resolution. That is not a rounding error, and it settles the question in favour of doing the work.
+
+**Gap 7's real cost.** The entry knew directory imports fail; it had no number. On Hono: **156 of 879 local imports fail to link — 17.8%** — across 25 distinct paths, every one of them a directory import (`./router/reg-exp-router` wanting `./router/reg-exp-router/index.ts`). Silently. Roughly a fifth of the cross-file graph is simply absent, with nothing reporting it.
+
+#### What to take from this
+
+The two failures that stopped the run (gaps 13, 14) are both about *other people's code* — a file type this repo doesn't contain, and an error path that never fires when every input is known-good. No amount of self-analysis reaches them. Neither is hard; both are invisible from inside.
+
+The measurement method held up for the third time: run it, rank the unresolved names, read them. That found gap 9, then gap 12, and now gap 15.
+
+Worth repeating on a second external repo once gaps 13-15 land — ideally one with decorators, namespaces, or `export *`, none of which either codebase exercises.
 
 *Last updated: August 15, 2026*
