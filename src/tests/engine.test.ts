@@ -270,6 +270,40 @@ test("an enum member initializer still resolves", () => {
     expect(useCounts(`const SIZE = 5; enum E { A = SIZE }`).SIZE).toBe(1);
 });
 
+// Gap 15 — TSTypeAnnotation covered `x: T`, but type space is reachable by
+// several routes that never pass through an annotation node: a `<T>` parameter
+// declaration, a type name anywhere (`as Foo`, `as const`, `foo<Bar>()`), and
+// an implements clause. Each handed the walker an identifier to look up in the
+// *value* scope chain. `T` was the most unresolved name in Hono's library code.
+test("a type parameter does not use a same-named variable", () => {
+    expect(useCounts(`const T = 9; function f<T>(x: T): T { return x } const z = T;`).T).toBe(1);
+});
+
+test("a type reference does not use a same-named variable", () => {
+    expect(useCounts(`const Foo = 1; const z = 2; const y = z as Foo;`).Foo).toBe(0);
+});
+
+// Asserted on `lookups` rather than `edges`: no variable can be named `const`,
+// so the leak never produced an edge — it produced a permanently unresolvable
+// lookup, which is invisible to `edges` and inflated the miss count instead.
+test("`as const` does not look for a variable named const", () => {
+    expect(lookups(`const x = { a: 1 } as const;`).unresolved).toBe(0);
+});
+
+test("constructor type arguments are not values", () => {
+    expect(useCounts(`const Foo = 1; const m = new Map<string, Foo>();`).Foo).toBe(0);
+});
+
+// The guard on not over-skipping. `extends B` names a real runtime value and
+// must keep its use; `implements I` has no runtime effect and must not. Both
+// sit on the same class declaration, so a fix that skipped type space too
+// broadly would take the superclass with it.
+test("extends keeps its use while implements does not", () => {
+    const counts = useCounts(`class B {} interface I {} class D extends B implements I {} const d = D;`);
+    expect(counts.B).toBe(1);
+    expect(counts.I).toBe(0);
+});
+
 // Gap 7 (import resolution assumes `.ts`) is cross-file, so it can't be tested
 // through collectVariables. It needs the `analyze(dir)` extraction out of
 // flow.ts and a fixture directory.
