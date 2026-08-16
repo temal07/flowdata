@@ -20,7 +20,7 @@ if (!targetArg) {
 
 const projectDir = resolve(process.cwd(), targetArg);
 
-const { graph, filesAnalysed } = await analyse(projectDir);
+const { graph, filesAnalysed, skipped } = await analyse(projectDir);
 // Serialized once and used twice: written to disk below, and served verbatim
 // to the viewer. Left compact deliberately — indenting this graph costs ~45%
 // more bytes (16.2MB vs 11.2MB on this repo) on both paths, and nothing reads
@@ -31,6 +31,18 @@ const graphJson = JSON.stringify(graph);
 const outPath = resolve(process.cwd(), Bun.argv[3] ?? "graph.json");
 await Bun.write(outPath, graphJson);
 console.log(`flow: analysed ${filesAnalysed} files.`);
+// Every skipped file is a hole in the graph. Saying so here is the whole point
+// of collecting them — a graph that is quietly missing a file looks exactly
+// like a graph where that file had nothing to contribute. First few only, since
+// a broken directory can produce hundreds and the pattern shows in the first
+// three.
+if (skipped.length > 0) {
+    console.log(`flow: skipped ${skipped.length} file(s) that failed to parse:`);
+    for (const { file, reason } of skipped.slice(0, 3)) {
+        console.log(`  ${file.replace(projectDir + "/", "")} — ${reason}`);
+    }
+    if (skipped.length > 3) console.log(`  ...and ${skipped.length - 3} more`);
+}
 console.log(`flow: wrote graph to ${outPath}`);
 
 // Serve the graph viewer and the graph JSON file. and open it in the browser.
