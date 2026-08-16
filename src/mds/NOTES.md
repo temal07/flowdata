@@ -22,10 +22,10 @@ States are judged against *arbitrary* input, not against this repo — the Hono 
 | Reassignment (`x = foo()`)                   | ✅ Done — not destructuring, see gap 5     |
 | Method-call resolution                       | ⚠️ Name-only — 8.0% collide, see gap 1     |
 | Resolution reporting (`Results.lookups`)     | ⚠️ Counts, but globals list is thin        |
-| Cross-file linking (imports → declarations)  | ❌ 17.8% unlinked on Hono, silent — gap 7  |
+| Cross-file linking (imports → declarations)  | ✅ 1 of 1,505 unlinked on Hono, and counted |
 | Runs on an arbitrary repo                    | ✅ Survives bad files, reports them        |
 | JSX / `.tsx` support                         | ✅ Done — `.ts` stays non-JSX, see gap 13  |
-| Automated tests                              | ⏳ Partial — 47 tests, linking untested    |
+| Automated tests                              | ⏳ Partial — 56 tests, linking now covered |
 | MCP wrapper                                  | ⏳ Planned — see item 6 in Next up         |
 
 
@@ -40,6 +40,8 @@ Most of these are guarded by `bun test` (`src/tests/engine.test.ts`); the rest w
 **Feed targets nest correctly.** Save/restore around each declarator means `const a = () => { const b = x }` gives `x` feeds `b`, not `a`. Multiple uses in one init (`const c = x + y`) resolve to the right target.
 
 **Every declarator feeds its own names.** `const a = f(), b = 9, c = g()` gives `f` feeds `a` and `g` feeds `c`; `const { a, b } = foo()` feeds both. (The earlier claim here that multiple declarators already worked was wrong — see gap 4.)
+
+**Imports link across files.** `import { greet } from "./util"` finds `util/index.ts`, `util.ts`, or `util.js` — whichever the project actually has — and moves the uses recorded against the local import binding onto the real declaration, so the edge crosses the file boundary. Local imports that don't link are counted rather than dropped. See gap 7.
 
 **Full interprocedural chain.** `function foo(p) { return p } const z = 2; const a = foo(z)` produces `z` feeds `p`, `foo.returns = [p]`, and `foo` feeds `a`. `query.ts` stitches these into one path — this is the v1.2 goal, and it is done. (The old note saying flow is "intraprocedural only" was stale.)
 
@@ -190,13 +192,40 @@ Same computed/non-computed split as gap 1's `MemberExpression` callee and `Metho
 
 **Three instances, but there is a fourth the rule was never applied to** — reading a member expression, `o.p`, as opposed to calling one. See gap 9. Worth knowing that this entry reading as fully RESOLVED is what made that easy to miss: the rule was stated correctly here and then only enforced in three of the four places it holds.
 
-### 7. Import resolution assumes `.ts`
+### 7. Import resolution assumes `.ts` — FIXED August 16 2026
 
-The resolver appends `.ts` unconditionally, so pure-JS projects extract fine but never link. Directory imports (`./foo` → `./foo/index.ts`) and explicit extensions (`./foo.js` → `./foo.js.ts`) also fail. Fix: try a candidate list of extensions and index files.
+The resolver appended `.ts` unconditionally, so pure-JS projects extracted fine but never linked. Directory imports (`./foo` → `./foo/index.ts`) and explicit extensions (`./foo.js` → `./foo.js.ts`) also failed.
 
-**Measured on Hono, August 15 2026 (see the case study): 156 of 879 local imports fail to link — 17.8%**, across 25 distinct paths, every one of them a directory import (`./router/reg-exp-router` wanting `./router/reg-exp-router/index.ts`). So roughly a fifth of the cross-file graph is missing on a normal TypeScript project.
+**The fix splits the job by what each side knows.** `engine.ts` has the importing file's directory, so it turns `./util` into an absolute base path — and now stops there instead of guessing an extension. `analyse.ts` has the set of files actually analysed, so it decides which real file that base names, via `resolveImport(base, files)` trying four candidate shapes in order:
 
-**And it fails silently**, which is the worse half. `analyse` does `if (sourceResults === undefined) continue` — a deliberate skip for package imports, which is right, but it swallows local imports that simply weren't resolved. Nothing distinguishes "this import points outside the project" from "this import points inside the project and the resolver couldn't find it." A consumer sees a graph with no edges there and no reason to doubt it. Counting the second case, the way gap 11 counts unresolved names, costs a line and turns a silent hole into a number.
+1. the base as written — the specifier already carried a real extension
+2. `base + ext` for each extension the glob matches
+3. `base + "/index" + ext` — the directory import
+4. `.js` → `.ts` (and `.jsx` → `.tsx`) — TypeScript doesn't rewrite import paths when it compiles, so an ESM source names the file that will exist at runtime
+
+Order is load-bearing: a file beats a directory of the same name, and case 4 stays last so a project where the `.js` genuinely exists links to that. `.mjs`/`.cjs` have no case 4 — they'd map to `.mts`/`.cts`, which the glob never collects, so the candidate could never be in the set.
+
+**Matched against `treeResults`, not the filesystem.** The question is "did we analyse this file?", not "does this path exist?" — a `.d.ts` or a `.min.js` exists but `isProjectSource` deliberately excluded it, and linking to one would point an edge at a node the graph doesn't contain. It also keeps `resolveImport` pure, so it unit-tests against a `Set` with no disk access.
+
+**Measured on Hono, before and after, same clone and same denominator:**
+
+| | before | after |
+| --- | --- | --- |
+| local specifiers failing to link | 365 / 1,505 (24.3%) | **1 / 1,505 (0.1%)** |
+| distinct failing paths | 54 | 1 |
+| graph edges | 6,825 | **7,444** (+619, +9.1%) |
+
+The one remaining failure is a `.json` import (`/middleware/jwk/keys.test.json`) — genuinely not a source file, correctly unlinked. Every top entry in the before-list was a directory import the old `+ ".ts"` turned into a file that never existed: `/jsx/hooks.ts` (77×), `/jsx.ts` (54×), `/jsx/dom.ts` (30×).
+
+Note the denominator differs from the 17.8% recorded on August 15: that measured 879 specifiers across library code only, this measures all 1,505 across 309 files including tests. Before and after were run on the identical set, so the comparison holds; the two percentages are just not the same population.
+
+`lookups` did not move at all (36,309 / 24,101 both runs), which is the reassuring part — that counter measures within-file resolution in `collectVariables`, and linking happens later in `analyse` step 2. The change is isolated to cross-file edges.
+
+**And it used to fail silently**, which was the worse half. `analyse` does `if (sourceResults === undefined) continue` — a deliberate skip for package imports, which is right, but it also swallowed local imports that simply weren't resolved. Nothing distinguished "points outside the project" from "points inside and the resolver couldn't find it". Now `analyse` returns `unlinkedImports` (counted per **specifier**, so `import { a, b } from "./x"` contributes 2) and `flow.ts` prints it whenever it is non-zero. Only local imports count: the discriminator is `isAbsolute(binding.source)`, which is free because the engine makes local sources absolute and leaves package specifiers bare.
+
+The counter is deliberately incremented at the resolve step rather than at the `sourceResults === undefined` skip. They are not the same set — an import can resolve to a real file and still fail to find the declaration inside it (`if (!realDec) continue`), which is a different bug and not this one.
+
+**Still not handled:** `tsconfig` `paths` aliases, `export * from`, and non-relative imports that are nonetheless local. None have been measured; all would show up as `unlinkedImports` climbing rather than as silence, which was the point.
 
 ### 8. A use resolves to an outer declaration that a later inner one shadows
 
@@ -428,14 +457,14 @@ The edge count *falling* is the point — 106 phantom edges removed, the same sh
 
 ## Next up
 
-Reordered after the Hono case study, which led with gaps 13, 14 and 15 — all now done. flowdata runs end to end on a foreign repo, which it could not do this morning, and Hono's library code resolves at 91.2%.
+Gap 7 came off this list on August 16 — it was item 2, and it was done ahead of item 1 because the measured hole was more than twice as large (24.3% of specifiers vs an 8.0% collision rate) and the change only *adds* edges, where call-site resolution rewrites how callees resolve and can produce wrong ones.
 
 1. **Call-site resolution** — gap 1's ignored receiver and gap 8's shadowing, as one change. Gap 8's entry explains why they can't be separated: deferring identifier lookups fixes shadowing but leaves `CallExpression` resolving the callee eagerly, so the graph would claim a call is the inner function while its argument flows into the outer one's parameter. With gap 15 closed this is the **only known source of wrong edges** left — everything else on this list is a missing edge. The collision rate is now measured at 8.0% on Hono, which settles the "is it worth it" question in gap 1. Cheaper than type inference: restrict the name-only match to method declarations, and use `KNOWN_GLOBALS` so a global receiver marks the call external rather than binding `Bun.file()` to a local `file`.
-2. **Import resolution** (gap 7) — 17.8% of Hono's local imports don't link, silently. A candidate list of extensions and index files, plus a count of local imports that failed to resolve so the hole stops being invisible.
-3. **Cross-file test harness** — `analyse(dir) → Graph` exists, so there is a function to call; the fixture directory and the tests still aren't written, and every engine test to date runs `collectVariables` on a single string. Nothing exercises linking. Pairs naturally with item 2, since both need fixtures with real directory structure. Partly started: gaps 13 and 14 added the first two tests that call `analyse` rather than `collectVariables`, writing fixtures to a temp dir so a deliberately unparseable file never lands in the repo and breaks `tsc`.
+2. **Extend `KNOWN_GLOBALS`** — the cheapest coverage left, and the residue analysis is what surfaced it. Of Hono's 1,017 unresolved lookups, roughly half are names nothing in the project declares (`isArray` 53, `charCodeAt` 40, `create` 31, `at` 29, `Uint8Array` 15) — a thin globals list, not a walker failure. Editing a list would take the rate to about 95%. The other half was gap 7, now closed.
+3. **Cross-file test harness** — mostly done as of gap 7. Gaps 13/14 added the first `analyse`-on-a-temp-dir tests; gap 7 added `fixtureDir` fixtures with real directory structure and the first assertions on cross-file edges. What's left is breadth: re-export chains, default exports, and `export * from`, none of which is exercised.
 4. **Types decision** (remainder of gap 3) — do type references belong in a data-flow graph at all? Gap 12 settled that type *bodies* are skipped; this is the separate question of whether `const x: Result` should record a use of `Result`.
 5. **Destructuring assignment** (remainder of gap 5) — `[a, b] = foo()` needs a lookup-per-leaf sibling to `collectPatternNames`. Small, but rare enough to wait for evidence.
-6. **MCP wrapper** — serve the graph to agents once coverage is trustworthy. Not close, and the case study widened the gap rather than narrowing it: a fifth of cross-file edges are missing and nothing says so (item 2), linking is untested (item 3), `query.ts` has no backward trace, and a 4,700-node graph can't be handed to an agent whole — the surface has to be bounded traversals, not "here is the graph."
+6. **MCP wrapper** — serve the graph to agents once coverage is trustworthy. Closer than it was: the fifth of cross-file edges that were missing are now present and the remainder is counted rather than silent. Still outstanding — `query.ts` has no backward trace, and a graph this size can't be handed to an agent whole, so the surface has to be bounded traversals, not "here is the graph."
 
 **Measured August 15 2026** by calling `analyse()` directly and reading `lookups`. On `src/scripts`, 8 files: **748 resolved, 28 unresolved, 189 external — 96.4%** excluding externals. Whole repo, 12 files, 316 nodes: 89.3%. The progression over one day, same target, as each gap closed:
 
@@ -490,7 +519,7 @@ Three groups, and the first was a surprise:
 
 **Gap 1's collision rate.** Its receiver bullet has said since August 9 to *"revisit if measurement says the collision rate is high."* On Hono: **49 of 612 function names collide within a single file — 8.0%**, across 34 of 134 files, 84 extra declarations. With tests included, 133 of 902, **14.7%**. Roughly one method name in twelve is ambiguous under name-only resolution. That is not a rounding error, and it settles the question in favour of doing the work.
 
-**Gap 7's real cost.** The entry knew directory imports fail; it had no number. On Hono: **156 of 879 local imports fail to link — 17.8%** — across 25 distinct paths, every one of them a directory import (`./router/reg-exp-router` wanting `./router/reg-exp-router/index.ts`). Silently. Roughly a fifth of the cross-file graph is simply absent, with nothing reporting it.
+**Gap 7's real cost.** The entry knew directory imports fail; it had no number. On Hono: **156 of 879 local imports fail to link — 17.8%** — across 25 distinct paths, every one of them a directory import (`./router/reg-exp-router` wanting `./router/reg-exp-router/index.ts`). Silently. Roughly a fifth of the cross-file graph is simply absent, with nothing reporting it. *(Fixed the next day — see gap 7. Measuring it is what got it prioritised ahead of call-site resolution.)*
 
 #### What to take from this
 
@@ -500,4 +529,4 @@ The measurement method held up for the third time: run it, rank the unresolved n
 
 Worth repeating on a second external repo once gaps 13-15 land — ideally one with decorators, namespaces, or `export *`, none of which either codebase exercises.
 
-*Last updated: August 15, 2026*
+*Last updated: August 16, 2026*

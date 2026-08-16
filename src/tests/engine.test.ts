@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test';
 import { parse } from "@typescript-eslint/typescript-estree"
 import { collectVariables } from '../scripts/engine';
-import { isProjectSource, allowsJsx, analyse } from '../scripts/analyse';
+import { isProjectSource, allowsJsx, analyse, resolveImport } from '../scripts/analyse';
 import { tmpdir } from 'os';
 import { rm } from 'fs/promises';
 
@@ -406,6 +406,97 @@ test("a .tsx file is analysed rather than failing to parse", async () => {
     expect(skipped).toHaveLength(0);
     expect(filesAnalysed).toBe(1);
     expect(graph.nodes.map((n) => n.name)).toContain("cls");
+
+    await rm(dir, { recursive: true, force: true });
+});
+
+// Gap 7 — the resolver appended `.ts` to every local import, so anything that
+// wasn't literally `<base>.ts` silently failed to link. On Hono that was 365 of
+// 1,505 specifiers (24.3%), every one of them a directory import, and the graph
+// reported nothing: a missing cross-file edge looks exactly like two things that
+// never touched. `resolveImport` is checked against a Set rather than the disk
+// because the question is "did we analyse this file?", not "does this exist?" —
+// a `.d.ts` exists but isProjectSource excluded it, so linking to it would point
+// at a node the graph doesn't contain. That also makes these tests pure.
+const FILES = new Set([
+    "/p/exact.js",
+    "/p/plain.ts",
+    "/p/util/index.ts",
+    "/p/helper.ts",
+    "/p/both.ts",
+    "/p/both/index.ts",
+]);
+
+test("an import specifier with a real extension resolves as written", () => {
+    expect(resolveImport("/p/exact.js", FILES)).toBe("/p/exact.js");
+});
+
+test("an extensionless import picks up the extension", () => {
+    expect(resolveImport("/p/plain", FILES)).toBe("/p/plain.ts");
+});
+
+// The shape behind all 365 Hono failures: `./util` means `./util/index.ts`.
+// Asserting membership as well as equality is deliberate — the first draft
+// checked `base + "/index" + ext` but returned `base + "index" + ext`, so it
+// found the file and handed back a path that was never in the set. That fails
+// exactly like not resolving at all, and the equality check alone is what would
+// have caught it.
+test("a directory import resolves to its index file", () => {
+    const hit = resolveImport("/p/util", FILES);
+    expect(hit).toBe("/p/util/index.ts");
+    expect(FILES.has(hit!)).toBe(true);
+});
+
+// TypeScript doesn't rewrite import paths when it compiles, so an ESM source
+// names the file that will exist at runtime — `./helper.js` for helper.ts.
+test("a .js specifier resolves to the .ts file it was compiled from", () => {
+    expect(resolveImport("/p/helper.js", FILES)).toBe("/p/helper.ts");
+});
+
+// Order matters where both could match: Node and TypeScript both prefer the
+// file, and case 4 must stay last so a project where the .js genuinely exists
+// links to that rather than to a same-named .ts.
+test("a file beats a directory of the same name", () => {
+    expect(resolveImport("/p/both", FILES)).toBe("/p/both.ts");
+});
+
+test("a real .js file beats its .ts sibling", () => {
+    expect(resolveImport("/p/exact.js", new Set(["/p/exact.js", "/p/exact.ts"]))).toBe("/p/exact.js");
+});
+
+test("an import that names nothing analysed resolves to undefined", () => {
+    expect(resolveImport("/p/nope", FILES)).toBeUndefined();
+});
+
+// End to end: the point of resolving is that uses recorded against the local
+// import binding get moved onto the real declaration, so the edge crosses the
+// file boundary. Before this fix the whole graph below was two orphan nodes.
+test("a directory import links uses across files", async () => {
+    const dir = await fixtureDir({
+        "util/index.ts": `export function greet(name) { return name }`,
+        "main.ts": `import { greet } from "./util"; const msg = greet("hi");`,
+    });
+    const { graph, unlinkedImports } = await analyse(dir);
+
+    const nameById = new Map(graph.nodes.map((n) => [n.id, n.name]));
+    const names = graph.edges.map((e) => `${nameById.get(e.source)} -> ${nameById.get(e.target)}`);
+
+    expect(names).toContain("greet -> msg");
+    expect(unlinkedImports).toBe(0);
+
+    await rm(dir, { recursive: true, force: true });
+});
+
+// The counter's whole job is telling the two apart. `./missing` points inside
+// the project and failing it is a bug; "zod" points outside and skipping it is
+// correct. Before this they took the same branch and produced the same silence.
+test("only local imports count as unlinked, not package imports", async () => {
+    const dir = await fixtureDir({
+        "main.ts": `import { a } from "./missing"; import { z } from "zod"; const x = a; const y = z;`,
+    });
+    const { unlinkedImports } = await analyse(dir);
+
+    expect(unlinkedImports).toBe(1);
 
     await rm(dir, { recursive: true, force: true });
 });
