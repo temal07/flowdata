@@ -2,7 +2,7 @@ import { collectVariables } from "./engine";
 import { parse } from "@typescript-eslint/typescript-estree";
 import { Glob } from "bun";
 import type { Graph, GraphEdge, Results } from "./types";
-import { resolve } from "path";
+import { isAbsolute, resolve } from "path";
 
 /**
  * Directories that are never the user's own source. Without this a plain
@@ -13,6 +13,10 @@ const IGNORED_DIRS = new Set([
   "node_modules", ".git", "dist", "build", "out", "coverage", ".next", "vendor",
   "*.min.js",
 ]);
+
+/** Extensions the glob matches, in the order a resolver should prefer them */
+const IMPORT_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+
 
 /**
  * Determines if a given path (relative to `projectDir`) is a project source file
@@ -43,6 +47,46 @@ export function isProjectSource(relativePath: string): boolean {
    */
   if (/\.min\.[cm]?js$/.test(relativePath)) return false;
   return true;
+}
+
+/**
+ * Which analysed file an import specifier names. 
+ * @param base: the absolute path (extensionless (e.g. .ts, .js)) path the engine produced
+ * @param files: A set of files that will be checked
+ * @returns the matching key of `files` or undefined if the import points outside
+ * the analysed set.
+ */
+export function resolveImport(base: string, files: Set<string>) : string | undefined {
+    // 1. First case: If the base file exists (e.g. /project/util)
+    // return it.
+    if (files.has(base)) return base;
+    
+    // 2. Second case: If the base file with the extension exists (e.g. /project/util.ts)
+    // return it.
+    for (const extension of IMPORT_EXTENSIONS) {
+      const candidate = base + extension;
+      if (files.has(candidate)) return candidate;
+    }
+
+    // 3. Third case: Directory imports. The default file that's imported
+    // whenever a directory instead of a file is imported is "index.ts" (Node convention).
+    for (const extension of IMPORT_EXTENSIONS) {
+      const candidate = base + "/index" + extension;
+      if (files.has(candidate)) return candidate;
+    }
+
+    // 4. Fourth case: JS paths instead of TS paths. (Same for JSX --> TSX)
+    if (base.endsWith(".js")) {
+      const sibling = base.slice(0, -3) + ".ts";
+      if (files.has(sibling)) return sibling;
+    }
+
+    if (base.endsWith(".jsx")) {
+      const sibling = base.slice(0, -4) + ".tsx";
+      if (files.has(sibling)) return sibling
+    }
+
+    return undefined;
 }
 
 /**
@@ -112,6 +156,7 @@ export async function analyse(projectDir: string): Promise<{
    *  missing from the graph, so a consumer that cares about completeness has
    *  to look here — nothing else signals the loss. */
   skipped: { file: string, reason: string }[],
+  unlinkedImports: number,
 }> {
   // keep each file's source around so edge clicks can show the actual code
   // at the use site, not just a file:line reference.
@@ -169,14 +214,25 @@ export async function analyse(projectDir: string): Promise<{
 
   // Step 2: for each file, for each import declaration, find the real
   // declaration in the source file and move the uses onto it.
+  const analysedFiles = new Set(Object.keys(treeResults));
+
+  // counts specifiers
+  let unlinkedImports = 0;
+
   for (const fileResults of Object.values(treeResults)) {
     for (const binding of fileResults.declarations) {
       // disregard non-import bindings
       if (binding.kind !== "import") continue;
 
       // assign the source of the import
-      const sourceResults = treeResults[binding.source!];
+      const resolvedSource = resolveImport(binding.source!, analysedFiles);
 
+      // if resolvedSource is undefined, increment the counter because
+      // the import couldn't link
+      if (!resolvedSource && isAbsolute(binding.source!)) unlinkedImports++;
+
+      const sourceResults = resolvedSource ? treeResults[resolvedSource] : undefined;
+ 
       // for undefined values of sourceResults, which are due to
       // packages and dependencies being imported, simply skip them
       if (sourceResults === undefined) continue;
@@ -247,5 +303,5 @@ export async function analyse(projectDir: string): Promise<{
     lookups.external += fileResults.lookups.external;
   }
 
-  return {graph, filesAnalysed: Object.keys(treeResults).length, lookups, skipped};
+  return {graph, filesAnalysed: Object.keys(treeResults).length, lookups, skipped, unlinkedImports};
 }
