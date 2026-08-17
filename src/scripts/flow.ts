@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 /**
- * flow.ts — the `flow` CLI.
+ * flow.ts — the `vena` CLI.
  *
- * Usage: `flow <directory>`
+ * Usage: `vena <directory>`
  *
  * This file is the "productionized" counterpart to debug.ts: same pipeline,
  * but as a real CLI (argv parsing, process.exit, browser launch, graceful
@@ -14,7 +14,7 @@ import { analyse } from "./analyse";
 const targetArg = Bun.argv[2];
 
 if (!targetArg) {
-    console.error("Usage: flow <directory>");
+    console.error("Usage: vena <directory>");
     process.exit(1);
 }
 
@@ -30,14 +30,14 @@ const graphJson = JSON.stringify(graph);
 // Write the graph to a JSON file.
 const outPath = resolve(process.cwd(), Bun.argv[3] ?? "graph.json");
 await Bun.write(outPath, graphJson);
-console.log(`flow: analysed ${filesAnalysed} files.`);
+console.log(`vena: analysed ${filesAnalysed} files.`);
 // Every skipped file is a hole in the graph. Saying so here is the whole point
 // of collecting them — a graph that is quietly missing a file looks exactly
 // like a graph where that file had nothing to contribute. First few only, since
 // a broken directory can produce hundreds and the pattern shows in the first
 // three.
 if (skipped.length > 0) {
-    console.log(`flow: skipped ${skipped.length} file(s) that failed to parse:`);
+    console.log(`vena: skipped ${skipped.length} file(s) that failed to parse:`);
     for (const { file, reason } of skipped.slice(0, 3)) {
         console.log(`  ${file.replace(projectDir + "/", "")} — ${reason}`);
     }
@@ -49,7 +49,7 @@ if (skipped.length > 0) {
 // touched. Counted per specifier, and only local imports — `from "zod"` is
 // outside the project and skipping it is correct, so it is not in this number.
 if (unlinkedImports > 0) {
-    console.log(`flow: ${unlinkedImports} import specifier(s) point inside the project ` +
+    console.log(`vena: ${unlinkedImports} import specifier(s) point inside the project ` +
         `but could not be linked — those edges are missing from the graph.`);
 }
 
@@ -57,15 +57,15 @@ if (unlinkedImports > 0) {
 // graph can be. Every other edge is proven; these passed through a call whose
 // callee never resolved, so they are assumed. Said out loud rather than left in
 // the JSON, because a graph that silently mixes the two is a graph you can't
-// cite. `query --strict` traverses without them.
+// cite. `vena-trace --strict` traverses without them.
 const inferredEdges = graph.edges.filter((e) => e.inferred).length;
 if (inferredEdges > 0) {
     const share = ((inferredEdges / graph.edges.length) * 100).toFixed(1);
-    console.log(`flow: ${graph.edges.length} edges — ${graph.edges.length - inferredEdges} proven, ` +
+    console.log(`vena: ${graph.edges.length} edges — ${graph.edges.length - inferredEdges} proven, ` +
         `${inferredEdges} inferred (${share}%) through unresolved calls.`);
 }
 
-console.log(`flow: wrote graph to ${outPath}`);
+console.log(`vena: wrote graph to ${outPath}`);
 
 // Serve the graph viewer and the graph JSON file. and open it in the browser.
 const viewerDir = new URL("../viewer/", import.meta.url).pathname;
@@ -96,12 +96,12 @@ const server = Bun.serve({
     },
 });
 
-console.log(`flow: serving graph viewer at ${server.url}`);
+console.log(`vena: serving graph viewer at ${server.url}`);
 
 const openCommand = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
 Bun.spawn([openCommand, server.url.toString()], { stdout: "ignore", stderr: "ignore" });
 
-console.log("flow: press q + Enter to stop (or Ctrl+C)");
+console.log("vena: press q + Enter to stop (or Ctrl+C)");
 
 function shutdown() {
     server.stop();

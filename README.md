@@ -1,6 +1,6 @@
 # vena
 
-Trace how data flows through a TypeScript/JavaScript codebase, rendered as an interactive graph.
+Formerly named 'flowdata', it traces how data flows through a TypeScript/JavaScript codebase, rendered as an interactive graph.
 
 Point it at a project and vena parses every file, resolves scope, links uses to declarations across files, and follows values as they flow from one variable into another. Click any symbol to see where it's declared, where it's used, and what it feeds into.
 

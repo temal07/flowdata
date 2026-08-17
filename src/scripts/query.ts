@@ -2,10 +2,10 @@
 /**
  * query.ts — traversal over a graph.json emitted by flow.ts.
  *
- * Usage: `bun src/scripts/query.ts <target> [graph.json] [--back] [--depth N] [--max N]`
+ * Usage: `vena-trace <target> [graph.json] [--back] [--strict] [--depth N] [--max N]`
  *
  * Reads the graph off disk rather than re-running the analysis, so querying
- * is decoupled from the CLI/viewer pipeline: `flow <dir>` produces the graph
+ * is decoupled from the CLI/viewer pipeline: `vena <dir>` produces the graph
  * once (see its step 5), everything here is a pure consumer of that file.
  *
  * Two questions, one traversal:
@@ -265,15 +265,15 @@ export function formatTrace(graph: Graph, result: TraceResult): string[] {
             ? `${indent}${step.note}${step.node.name} (${at}) — already visited${mark}`
             : `${indent}${step.note}${step.node.name} [${step.node.kind}] (${at})${mark}`;
     });
-    if (result.depthLimited) lines.push(`query: some branches stopped at the depth limit — raise it with --depth N`);
-    if (result.truncated) lines.push(`query: output truncated at ${result.steps.length} nodes — raise it with --max N`);
+    if (result.depthLimited) lines.push(`vena-trace: some branches stopped at the depth limit — raise it with --depth N`);
+    if (result.truncated) lines.push(`vena-trace: output truncated at ${result.steps.length} nodes — raise it with --max N`);
     return lines;
 }
 
 /* ---------------------------------------------------------------------- CLI */
 
 const USAGE =
-    "Usage: query <target> [graph.json] [--back] [--strict] [--depth N] [--max N]\n" +
+    "Usage: vena-trace <target> [graph.json] [--back] [--strict] [--depth N] [--max N]\n" +
     "  <target>   name (`res`), file:line (`compose.ts:38`), or file:name (`compose.ts:res`)\n" +
     "  --back     trace backward: where did this value come from?\n" +
     "  --strict   proven edges only — drop flow assumed through unresolved calls\n" +
@@ -340,7 +340,7 @@ async function main(): Promise<void> {
     try {
         args = parseArgs(Bun.argv.slice(2));
     } catch (error) {
-        console.error(`query: ${(error as Error).message}\n${USAGE}`);
+        console.error(`vena-trace: ${(error as Error).message}\n${USAGE}`);
         process.exit(1);
     }
 
@@ -354,29 +354,29 @@ async function main(): Promise<void> {
 
     const file = Bun.file(graphPath);
     if (!(await file.exists())) {
-        console.error(`query: no graph at ${graphPath} — run \`flow <directory>\` first`);
+        console.error(`vena-trace: no graph at ${graphPath} — run \`vena <directory>\` first`);
         process.exit(1);
     }
 
     const graph: Graph = await file.json();
 
     if (!Array.isArray(graph.edges)) {
-        console.error(`query: ${graphPath} has no edges — it predates the current flow.ts output; regenerate it`);
+        console.error(`vena-trace: ${graphPath} has no edges — it predates the current flow.ts output; regenerate it`);
         process.exit(1);
     }
 
     const starts = resolveTarget(graph, target);
 
     if (starts.length === 0) {
-        console.log(`query: nothing matching ${target} in ${graphPath}`);
+        console.log(`vena-trace: nothing matching ${target} in ${graphPath}`);
         process.exit(1);
     }
 
     if (starts.length > 1) {
         // Every line here is a valid target, which is the point: the ambiguity
         // message hands back addresses that can be pasted straight into a rerun.
-        console.log(`query: ${starts.length} declarations match ${target}; tracing the first.`);
-        console.log(`query: re-run with one of these to pick another:`);
+        console.log(`vena-trace: ${starts.length} declarations match ${target}; tracing the first.`);
+        console.log(`vena-trace: re-run with one of these to pick another:`);
         for (const start of starts) console.log(`  ${where(graph, start)} [${start.kind}] ${start.name}`);
         console.log("");
     }
