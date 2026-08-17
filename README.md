@@ -20,11 +20,40 @@ bun install
 
 ## Usage
 
+### Build the graph and open the viewer
+
 ```bash
-flow ./path/to/project
+vena ./path/to/project
 ```
 
-vena scans for `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, and `.cjs` files, analyzes them, and opens a local graph viewer. Search for a symbol to reveal it and its connections; click a node for its declaration site and every use.
+vena scans for `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, and `.cjs` files, analyzes them, writes `graph.json`, and opens a local graph viewer. Search for a symbol to reveal it and its connections; click a node for its declaration site and every use.
+
+### Trace a value from the terminal
+
+```bash
+vena-trace <target> [graph.json] [--back] [--strict] [--depth N] [--max N]
+```
+
+`<target>` is `file:line` (`compose.ts:38`) or `file:name` (`compose.ts:res`). A bare name works too, but names collide — if several match, vena lists them with addresses you can paste straight back.
+
+```bash
+# where does this value end up?
+vena-trace utils/filepath.ts:14 graph.json
+
+# where did it come from?
+vena-trace compose.ts:38 graph.json --back
+```
+
+```
+res [variable] (compose.ts:38)
+  <- via `res = await onError(err, context)` err [catch] (compose.ts:52) ~inferred
+  <- via `res = await handler(context, () => dispatch(i + 1))` handler [variable] (compose.ts:40)
+  <- via `res = await onNotFound(context)` context [param] (compose.ts:20) ~inferred
+  <- via `res = await onError(err, context)` onError [param] (compose.ts:17)
+  <- via `res = await onNotFound(context)` onNotFound [param] (compose.ts:18)
+```
+
+Hops marked `~inferred` are assumed rather than proven — the value passed through a call vena could not resolve, so it treats that call as transparent. `--strict` drops them and traces only proven edges. `--depth` and `--max` bound the output, and say so when they fire.
 
 ## Where things live
 
