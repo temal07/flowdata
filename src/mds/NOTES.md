@@ -638,6 +638,72 @@ Nine of the ten imperfect answers attribute to three causes — gap 18 (five), g
 
 ---
 
+## Launch
+
+**Decision, August 17 2026: ship at 15/20 rather than chase 20/20.** The reasoning is that the accuracy claim is already stronger than most dev tools launch with — measured on a foreign codebase, with zero wrong answers, and with the guesses labelled as guesses. Everything left on *Next up* is a refinement to a tool that already answers three-quarters of real data-flow questions correctly. Real usage ranks the remaining gaps better than more self-analysis will.
+
+### Timing — measured August 17 2026
+
+| repo | files | `analyse()` | graph.json |
+| --- | --- | --- | --- |
+| flowdata `src/scripts` | 9 | 46ms | 0.4MB |
+| Hono library only | 186 | 304ms | 7.3MB |
+| Hono, everything | 309 | **1.0s** | 21.8MB |
+
+**One second for 310 files kills the hardest MCP design problem before it arrives.** No incremental analysis, no watch mode, no clever invalidation — check mtimes, rebuild if anything moved, cache under `.flowdata/`. Assume this holds to a few thousand files and re-measure past that.
+
+The 21.8MB figure is the other half of the argument: the graph can never be handed over whole. The surface has to be bounded traversals, which `query.ts` now is.
+
+### What blocks a v0
+
+None of it is engine accuracy.
+
+1. **Staleness contract.** An agent edits a file and then asks a question. A stale graph gives a *confidently wrong* answer, which is worse than no tool. Cheap to solve at 1s rebuild, but it has to be decided rather than left implicit.
+2. **Two tools, not more.** `trace(target, direction, depth)` and `find(name) → addresses`. Small surfaces get used correctly.
+3. **`file:line` is not always unique** — `utils/crypto.ts:33` matches three declarations. A human reads the candidate list and picks; an agent may loop. Small fix, worth doing first.
+4. **Errors that suggest a next action.** "nothing matching X" should offer near-misses.
+5. **Packaging** — how a stranger runs it.
+
+### Explicitly not blocking
+
+Gaps 19 and 20, call-site resolution, extending `KNOWN_GLOBALS`, splitting `engine.ts`, reaching 20/20.
+
+If exactly one accuracy fix goes in first, make it **gap 19**: cheapest remaining, adds only correct edges, and BENCHMARK.md predicts 15/20 → 19/20.
+
+---
+
+## Benchmark #2 — does an agent do *better* with flowdata?
+
+**Not yet run.** This is the claim that actually matters and the one nothing here has measured. BENCHMARK.md establishes that the graph *contains* the answers. It says nothing about whether an agent holding it performs better than one with `grep` and `Read`. Those are different claims and only the second one is why anyone would install this.
+
+### It does not need the MCP
+
+`query.ts` is a CLI. An agent with shell access can already run it. **The MCP is packaging, not capability** — so this experiment is runnable now, and its result should decide how much effort the wrapper deserves rather than the other way round.
+
+### Design
+
+- **Tasks:** the twenty in BENCHMARK.md. The answer key exists, ground truth was derived by hand, and they are already data-flow questions. Weight reporting toward the multi-hop and cross-file ones (Q1, Q3, Q12, Q13) — the single-file ones are honestly greppable.
+- **Arm A:** agent with `Read`/`Grep`/`Bash` on a Hono checkout.
+- **Arm B:** same agent, same task, plus the `query.ts` CLI and one paragraph on how to use it.
+- **Controls:** same model, fresh context per task, identical task wording. Arm A gets an equally detailed prompt about searching well, so the comparison isn't "a hint versus no hint."
+- **Measure:** correct / incorrect against the existing key, **plus tool calls, tokens, and wall time.**
+
+### Prediction, recorded before running
+
+Writing this down first, the same discipline that makes gap 19's prediction worth checking.
+
+**Correctness will be close.** Models read code well, and on a 60-line file `grep` is enough. **The difference will show up in cost** — Q3's chain crosses two files and five hops, which is many searches for an agent and one command for flowdata.
+
+So the hypothesis under test is *"fewer tool calls for the same answer"*, not *"answers otherwise unreachable."* If cost is also a wash, that is a real result and the honest conclusion is that the graph does not earn its place — better to learn that from twenty tasks than after building a server.
+
+### Threats to validity, to state in the writeup
+
+- The same author wrote the questions and the tool. Include tasks where `grep` should win and report them.
+- Twenty tasks is small. Expect noise; do not quote a percentage that will not survive a second run.
+- Arm B's prompt mentions data flow, which is itself a hint that data flow matters.
+
+---
+
 ## Next up
 
 **Reordered August 17 2026 by BENCHMARK.md.** Gap 7 came off this list on August 16, and gap 16 the same day. The benchmark then reordered everything below it: the top two items are now the two causes that account for eight of the ten imperfect answers, and neither was visible in any internal metric.
