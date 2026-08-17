@@ -102,8 +102,16 @@ export interface Use {
      *  `const { a, b } = foo()` reads `foo` a single time, and that value
      *  flows into both `a` and `b`. Recording it as one use with two targets
      *  keeps `uses` an honest count of source occurrences — the alternative,
-     *  one duplicated use per target, is the bug fixed in gap 6. */
-    feeds?: { name: string; file: string; line: number; start: number; }[];
+     *  one duplicated use per target, is the bug fixed in gap 6.
+     *
+     *  `inferred` marks a feed the walker could not prove — the value passed
+     *  through a call whose callee never resolved (`x = y.replace(z)`), so `z`
+     *  is *assumed* to reach `x` because unknown calls are treated as
+     *  transparent. See gap 18: it recovers real flow through built-ins, but an
+     *  opaque callee may ignore its argument entirely (`n = arr.push(y)`), so
+     *  these are the one class of edge in the graph that can be wrong. Kept
+     *  separable rather than blended in, so the strict subgraph stays provable. */
+    feeds?: { name: string; file: string; line: number; start: number; inferred?: boolean; }[];
 }
 
 /**
@@ -122,6 +130,10 @@ export type Scope = {
      *  scope, restored when the scope is popped so flow tracking doesn't
      *  leak into or out of the scope it doesn't belong to. */
     savedFeedTargets: Binding[];
+    /** The `currentFeedsInferred` flag that travelled with `savedFeedTargets`.
+     *  Saved and restored as a pair — the flag qualifies those targets, so
+     *  restoring one without the other silently mislabels edges. */
+    savedFeedsInferred?: boolean;
     /** The `currentFunction` that was active just before entering this
      *  scope, restored when the scope is popped so flow tracking doesn't
      *  leak into or out of the scope it doesn't belong to. */
@@ -194,6 +206,10 @@ export type GraphEdge = {
     /** The `GraphNode.id` of the declaration the value flows into. */
     target: string;
     occurrences: Occurrence[];
+    /** Set only when *every* use behind this edge was an inferred feed — the
+     *  value passed through an unresolved callee. Absent means the edge is
+     *  backed by at least one proven flow. See gap 18. */
+    inferred?: boolean;
 };
 
 export type Graph = {

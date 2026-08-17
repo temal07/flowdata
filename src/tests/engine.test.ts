@@ -567,6 +567,75 @@ test("two imported functions keep their arguments separate", async () => {
     })).toEqual(["s -> a", "t -> b"]);
 });
 
+// ==== Gap 18: argument flow through an unresolved callee ====
+
+/** `name -> fed` for every feed, with `~` prefixed when the feed was inferred. */
+function feedsWithMarks(source: string): string[] {
+    const ast = parse(source, { loc: true, range: true });
+    const results = collectVariables(ast as any, "/test.ts");
+    const output: string[] = [];
+    for (const decl of results.declarations) {
+        for (const use of decl.uses) {
+            for (const fed of use.feeds ?? []) {
+                output.push(`${fed.inferred ? "~" : ""}${decl.name} -> ${fed.name}`);
+            }
+        }
+    }
+    return output.sort();
+}
+
+test("gap 18: an argument to an unknown method call reaches the assignment target", () => {
+    // Was the whole bug: the receiver `s` got an edge and the argument `t` did not.
+    expect(feedsWithMarks(`let s = "a"; const t = "b"; s = s.concat(t);`))
+        .toContain("~t -> s");
+});
+
+test("gap 18: the receiver of that same call still feeds, and is not inferred", () => {
+    expect(feedsWithMarks(`let s = "a"; const t = "b"; s = s.concat(t);`))
+        .toContain("s -> s");
+});
+
+test("gap 18: an argument to an unknown plain call reaches the declared variable", () => {
+    expect(feedsWithMarks(`const raw = "x"; const out = atob(raw);`))
+        .toContain("~raw -> out");
+});
+
+test("gap 18: nesting does not lose the innermost argument", () => {
+    // One unresolved call used to kill the entire argument subtree beneath it.
+    expect(feedsWithMarks(`const m = "x"; const out = one(two(m));`))
+        .toContain("~m -> out");
+});
+
+test("gap 18: a resolved parameter is proven even inside an unresolved call", () => {
+    // `unknown(known(x))` — the inner arg->param hop is real regardless of the
+    // outer call, so it must not inherit the enclosing inferred flag.
+    const marks = feedsWithMarks(`function known(p) { return p } const x = 1; const out = unknown(known(x));`);
+    expect(marks).toContain("x -> p");
+    expect(marks).not.toContain("~x -> p");
+});
+
+test("gap 18: a call in statement position still feeds nothing", () => {
+    // No enclosing target means there is nothing to pass through to — this is
+    // the 46.7% bucket on Hono, and it must stay empty.
+    expect(feedsWithMarks(`const z = 1; console.log(z);`)).toEqual([]);
+});
+
+test("gap 18: an ordinary initializer is never marked inferred", () => {
+    expect(feedsWithMarks(`const a = 1; const b = a;`)).toEqual(["a -> b"]);
+});
+
+test("gap 18: a resolved call marks its argument proven, not inferred", () => {
+    expect(feedsWithMarks(`function f(p) { return p } const z = 1; f(z);`)).toContain("z -> p");
+});
+
+test("gap 18: the inferred flag does not leak past the call that set it", () => {
+    // `save`/restore discipline — gap 5's lesson applied to the new flag.
+    const marks = feedsWithMarks(`const q = 1; const r = 2; const a = up(q); const b = r;`);
+    expect(marks).toContain("~q -> a");
+    expect(marks).toContain("r -> b");
+    expect(marks).not.toContain("~r -> b");
+});
+
  // ==== Untested gaps ====
 
 // No `.todo` left: every gap that collectVariables can express now has a test.

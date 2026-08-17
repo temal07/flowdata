@@ -310,6 +310,10 @@ export async function analyse(projectDir: string): Promise<{
   // every use site that contributed to it so clicking the edge can show the code.
   const nodeIds = new Set(graph.nodes.map((n) => n.id));
   const edgesByKey = new Map<string, GraphEdge>();
+  // Gap 18: an edge is only "inferred" if *every* use behind it was. One proven
+  // use is enough to make the edge real, so this ANDs rather than ORs — tracked
+  // beside the edge because the answer isn't known until the last contributor.
+  const allInferred = new Map<string, boolean>();
   for (const node of graph.nodes) {
     for (const use of node.uses) {
       if (!use.feeds) continue;
@@ -329,8 +333,13 @@ export async function analyse(projectDir: string): Promise<{
           edgesByKey.set(key, edge);
         }
         edge.occurrences.push({ file: use.file, line: use.line, code: codeAt(use.file, use.line) });
+        allInferred.set(key, (allInferred.get(key) ?? true) && fed.inferred === true);
       }
     }
+  }
+  // Stamped only when true, so a proven edge keeps the shape it always had.
+  for (const [key, edge] of edgesByKey) {
+    if (allInferred.get(key)) edge.inferred = true;
   }
   graph.edges.push(...edgesByKey.values());
 

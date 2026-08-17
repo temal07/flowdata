@@ -53,6 +53,18 @@ if (unlinkedImports > 0) {
         `but could not be linked — those edges are missing from the graph.`);
 }
 
+// Gap 18: the inferred share is the one number here that bounds how wrong the
+// graph can be. Every other edge is proven; these passed through a call whose
+// callee never resolved, so they are assumed. Said out loud rather than left in
+// the JSON, because a graph that silently mixes the two is a graph you can't
+// cite. `query --strict` traverses without them.
+const inferredEdges = graph.edges.filter((e) => e.inferred).length;
+if (inferredEdges > 0) {
+    const share = ((inferredEdges / graph.edges.length) * 100).toFixed(1);
+    console.log(`flow: ${graph.edges.length} edges — ${graph.edges.length - inferredEdges} proven, ` +
+        `${inferredEdges} inferred (${share}%) through unresolved calls.`);
+}
+
 console.log(`flow: wrote graph to ${outPath}`);
 
 // Serve the graph viewer and the graph JSON file. and open it in the browser.

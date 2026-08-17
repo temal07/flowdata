@@ -18,6 +18,15 @@ let currentFile = "";
  */
 let currentFeedTargets : Binding[] = [];
 
+/**
+ * Qualifies `currentFeedTargets`: true when we reached them by passing through a
+ * call whose callee never resolved, so the flow is assumed rather than proven
+ * (gap 18). Travels with the targets — every save/restore of one must save and
+ * restore the other, or an edge gets labelled by whatever the last unrelated
+ * call happened to leave behind.
+ */
+let currentFeedsInferred = false;
+
 // Define the function the walker is currently in.
 let currentFunction : Binding | null = null;
 
@@ -159,6 +168,11 @@ export function collectVariables(node: TSESTree.Node, file: string): Results {
     // reset so that the pending uses from one file does not
     // leak into another file.
     pendingUses = [];
+    // Same reasoning for the walk state. A balanced walk leaves both at their
+    // initial value anyway; resetting means a file that threw mid-walk can't
+    // hand its leftover feed target to the next one.
+    currentFeedTargets = [];
+    currentFeedsInferred = false;
     const results: Results = { 
         declarations: [], 
         lookups: { resolved: 0, unresolved: 0, external: 0 }, 
@@ -224,12 +238,18 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         const use = makeUse(node);
         // populate feeds from currentFeedTargets
         if (currentFeedTargets.length > 0) {
-            use.feeds = currentFeedTargets.map(t => ({
-                name: t.name,
-                file: t.file,
-                line: t.line,
-                start: t.start,
-            }));
+            use.feeds = currentFeedTargets.map(t => {
+                const fed: { name: string; file: string; line: number; start: number; inferred?: boolean } = {
+                    name: t.name,
+                    file: t.file,
+                    line: t.line,
+                    start: t.start,
+                };
+                // Set only when true, so a proven feed stays exactly the shape it
+                // has always been and graph.json doesn't grow a false on every use.
+                if (currentFeedsInferred) fed.inferred = true;
+                return fed;
+            });
         }
         // 
         // Looks up the declaration of this identifier name in the scope stack,
@@ -305,7 +325,9 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             const targets = scopeDeclarations.slice(before);
 
             const previous = currentFeedTargets;   // save
+            const previousInferred = currentFeedsInferred;
             currentFeedTargets = targets;          // set
+            currentFeedsInferred = false;          // a declarator names its target outright
             if (targets.length) trace("feed", `anything used from here flows into ${targets.map(t => t.name).join(" + ")}`, 1);
 
             if (decl.init) {                       // only if there's an init to walk
@@ -314,6 +336,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
 
             if (targets.length) trace("feed", `done — ${targets.map(t => t.name).join(" + ")} no longer the target`, -1);
             currentFeedTargets = previous;         // restore
+            currentFeedsInferred = previousInferred;
         }
         return;   // declarators are walked above; don't let the generic loop repeat them
     }
@@ -428,11 +451,13 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             name: node.id?.name ?? "anonymous_func",
             declarations: paramDeclarations,
             savedFeedTargets: currentFeedTargets,
+            savedFeedsInferred: currentFeedsInferred,
             savedFunction: currentFunction,
         });
         // Clear the list of currentFeedTargets because we are now inside a new function scope,
         // so there are no flow-carrying targets to link variable uses to at this level.
         currentFeedTargets = [];
+        currentFeedsInferred = false;
         // Set the currentFunction to the current function's binding (funcBinding),
         // or to null if there is no function binding. This keeps track of which function
         // scope we are currently in, which is important for identifying return statements
@@ -489,8 +514,10 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             }
 
             let save;
+            let saveInferred;
             for (let argIndex = 0; argIndex < node.arguments.length; argIndex++) {
                 save = currentFeedTargets;
+                saveInferred = currentFeedsInferred;
                 const param = calledFunc?.params?.[argIndex];
                 let target = param;
 
@@ -518,10 +545,25 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
                     results.deferredCallFeeds.push({ callee: calledFunc, argIndex, id });
                 }
 
-                currentFeedTargets = target ? [target] : [];
+                // Gap 18: with no parameter to feed, fall through to the enclosing
+                // target instead of dropping the argument. `x = y.replace(z)` used
+                // to record `y -> x` (the receiver is walked below, with `save`
+                // already restored) and nothing for `z` — the same call treating
+                // its two halves differently for no reason but where the loop ends.
+                //
+                // Passing through treats an unknown call as transparent, which is
+                // an over-approximation: `n = arr.push(y)` returns a length, not
+                // `y`. So the stamp is marked inferred and stays separable
+                // downstream, rather than being blended into proven flow.
+                currentFeedTargets = target ? [target] : save;
+                // A resolved parameter is proven flow, even when the enclosing
+                // context was itself inferred: in `unknown(known(x))` the inner
+                // `x -> param` is real regardless of the outer call.
+                currentFeedsInferred = target ? false : save.length > 0;
                 const arg = node.arguments[argIndex];
                 if (arg) walkVariables(arg, results, stack);   // guard: fewer args than params
                 currentFeedTargets = save;
+                currentFeedsInferred = saveInferred;
             }
 
             // This block ensures that all sub-expressions of the function call's callee are visited.
@@ -547,6 +589,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
             name: "block",
             declarations: [],
             savedFeedTargets: currentFeedTargets,
+            savedFeedsInferred: currentFeedsInferred,
             savedFunction: currentFunction,
         })
     }
@@ -587,9 +630,12 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         stack[stack.length - 1]?.declarations.push(methodBinding);
 
         const previous = currentFeedTargets; // save the old value
+        const previousInferred = currentFeedsInferred;
         currentFeedTargets = [methodBinding]; // set
-        walkVariables(node.value, results, stack); // walk 
+        currentFeedsInferred = false;         // the method names its own target
+        walkVariables(node.value, results, stack); // walk
         currentFeedTargets = previous; // restore
+        currentFeedsInferred = previousInferred;
         return; // node.key is the declaration itself, nothing to resolve there.
     }
 
@@ -618,14 +664,19 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
     if (node.type === "AssignmentExpression") {
         walkVariables(node.left, results, stack);
         const previous : Binding[] = currentFeedTargets;
+        const previousInferred = currentFeedsInferred;
 
         if (node.left.type === "Identifier") {
             const resolvedLeftNode = lookup(node.left.name, stack);
             currentFeedTargets = resolvedLeftNode  ? [resolvedLeftNode] : previous;
+            // Naming the write target makes this flow proven; falling back to
+            // `previous` keeps whatever qualification those targets already had.
+            if (resolvedLeftNode) currentFeedsInferred = false;
         }
         walkVariables(node.right, results, stack);
         // Restore currentFeedTargets to its previous value after handling AssignmentExpression
         currentFeedTargets = previous;
+        currentFeedsInferred = previousInferred;
         return;
     }
 
@@ -708,6 +759,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         const closing = stack[stack.length - 1]!;
         // Restore feed targets and function context when leaving a function scope
         currentFeedTargets = closing.savedFeedTargets ?? [];
+        currentFeedsInferred = closing.savedFeedsInferred ?? false;
         currentFunction = closing.savedFunction ?? null;
 
         // save the top list in results
@@ -720,6 +772,7 @@ function walkVariables(node: TSESTree.Node, results: Results, stack: Scope[]): v
         trace("scope", "leave block — its declarations move into the results list", -1);
         const closing = stack[stack.length - 1]!;
         currentFeedTargets = closing.savedFeedTargets;
+        currentFeedsInferred = closing.savedFeedsInferred ?? false;
         currentFunction = closing.savedFunction;
         results.declarations.push(...closing.declarations);
         stack.pop();
