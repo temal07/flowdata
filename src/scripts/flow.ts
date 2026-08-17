@@ -11,10 +11,30 @@
 import { resolve } from "path";
 import { analyse } from "./analyse";
 
+const USAGE =
+    "vena — map how data flows through a TypeScript/JavaScript project.\n" +
+    "\n" +
+    "Analyses every source file, links uses to declarations across files, writes the\n" +
+    "graph to disk, and opens a local viewer.\n" +
+    "\n" +
+    "Usage: vena <directory> [output.json]\n" +
+    "  <directory>    project to analyse — scans .ts .tsx .js .jsx .mjs .cjs\n" +
+    "  [output.json]  where to write the graph (default: ./graph.json)\n" +
+    "\n" +
+    "Then trace individual values with `vena-trace <target> [graph.json] --back`.";
+
 const targetArg = Bun.argv[2];
 
+// Handled before the empty check so `--help` prints on stdout and exits 0. It
+// used to fall through to `resolve()` and die on an ENOENT stack trace, which
+// is the first thing a new user types.
+if (targetArg === "--help" || targetArg === "-h") {
+    console.log(USAGE);
+    process.exit(0);
+}
+
 if (!targetArg) {
-    console.error("Usage: vena <directory>");
+    console.error(USAGE);
     process.exit(1);
 }
 

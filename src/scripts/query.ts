@@ -273,12 +273,20 @@ export function formatTrace(graph: Graph, result: TraceResult): string[] {
 /* ---------------------------------------------------------------------- CLI */
 
 const USAGE =
+    "vena-trace — follow one value through a graph built by `vena`.\n" +
+    "\n" +
     "Usage: vena-trace <target> [graph.json] [--back] [--strict] [--depth N] [--max N]\n" +
-    "  <target>   name (`res`), file:line (`compose.ts:38`), or file:name (`compose.ts:res`)\n" +
-    "  --back     trace backward: where did this value come from?\n" +
-    "  --strict   proven edges only — drop flow assumed through unresolved calls\n" +
-    `  --depth N  maximum hops (default ${DEFAULT_DEPTH})\n` +
-    `  --max N    maximum nodes printed (default ${DEFAULT_MAX})`;
+    "  <target>      what to trace: file:line (`compose.ts:38`), file:name\n" +
+    "                (`compose.ts:res`), or a bare name (`res`). Ambiguous input\n" +
+    "                lists the matches with addresses you can paste back.\n" +
+    "  [graph.json]  graph to read (default: ./graph.json, written by `vena <dir>`)\n" +
+    "  --back        where did this value come from? (default: where does it go?)\n" +
+    "  --strict      proven edges only — drop flow assumed through unresolved calls\n" +
+    `  --depth N     maximum hops (default ${DEFAULT_DEPTH})\n` +
+    `  --max N       maximum nodes printed (default ${DEFAULT_MAX})\n` +
+    "\n" +
+    "Output marked `~inferred` passed through a call vena could not resolve, so the\n" +
+    "hop is assumed rather than proven. `--strict` omits those.";
 
 /** Flags carry a value or they don't; one set can't drive both cases. */
 const BOOL_FLAGS = new Set(["--back", "-b", "--strict", "-s"]);
@@ -336,6 +344,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
 }
 
 async function main(): Promise<void> {
+    // Before parseArgs, so help is a success rather than an "unknown option"
+    // error on stderr with exit 1.
+    if (Bun.argv.includes("--help") || Bun.argv.includes("-h")) {
+        console.log(USAGE);
+        process.exit(0);
+    }
+
     let args: ParsedArgs;
     try {
         args = parseArgs(Bun.argv.slice(2));
