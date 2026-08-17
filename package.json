@@ -1,11 +1,11 @@
 {
-  "name": "flowdata",
+  "name": "vena",
   "module": "index.ts",
   "type": "module",
   "private": true,
   "bin": {
-    "flow": "./src/scripts/flow.ts",
-    "query": "./src/scripts/query.ts"
+    "vena": "./src/scripts/flow.ts",
+    "vena-trace": "./src/scripts/query.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

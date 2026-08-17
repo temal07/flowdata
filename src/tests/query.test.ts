@@ -288,7 +288,7 @@ test("traverse: a cycle terminates and is marked as revisited", () => {
 /* ------------------------------------------------------------- end to end */
 
 async function fixtureDir(files: Record<string, string>): Promise<string> {
-    const dir = `${tmpdir()}/flowdata-query-${crypto.randomUUID()}`;
+    const dir = `${tmpdir()}/vena-query-${crypto.randomUUID()}`;
     for (const [name, body] of Object.entries(files)) {
         await Bun.write(`${dir}/${name}`, body);
     }

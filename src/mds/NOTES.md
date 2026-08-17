@@ -1,4 +1,4 @@
-# flowdata — dev notes
+# vena — dev notes
 
 Static analysis engine for TypeScript/JavaScript. Parses source into an AST, resolves scope, extracts declarations and uses, links them across files, and traces data flow.
 
@@ -646,11 +646,11 @@ Nine of the ten imperfect answers attribute to three causes — gap 18 (five), g
 
 | repo | files | `analyse()` | graph.json |
 | --- | --- | --- | --- |
-| flowdata `src/scripts` | 9 | 46ms | 0.4MB |
+| vena `src/scripts` | 9 | 46ms | 0.4MB |
 | Hono library only | 186 | 304ms | 7.3MB |
 | Hono, everything | 309 | **1.0s** | 21.8MB |
 
-**One second for 310 files kills the hardest MCP design problem before it arrives.** No incremental analysis, no watch mode, no clever invalidation — check mtimes, rebuild if anything moved, cache under `.flowdata/`. Assume this holds to a few thousand files and re-measure past that.
+**One second for 310 files kills the hardest MCP design problem before it arrives.** No incremental analysis, no watch mode, no clever invalidation — check mtimes, rebuild if anything moved, cache under `.vena/`. Assume this holds to a few thousand files and re-measure past that.
 
 The 21.8MB figure is the other half of the argument: the graph can never be handed over whole. The surface has to be bounded traversals, which `query.ts` now is.
 
@@ -672,7 +672,7 @@ If exactly one accuracy fix goes in first, make it **gap 19**: cheapest remainin
 
 ---
 
-## Benchmark #2 — does an agent do *better* with flowdata?
+## Benchmark #2 — does an agent do *better* with vena?
 
 **Not yet run.** This is the claim that actually matters and the one nothing here has measured. BENCHMARK.md establishes that the graph *contains* the answers. It says nothing about whether an agent holding it performs better than one with `grep` and `Read`. Those are different claims and only the second one is why anyone would install this.
 
@@ -692,7 +692,7 @@ If exactly one accuracy fix goes in first, make it **gap 19**: cheapest remainin
 
 Writing this down first, the same discipline that makes gap 19's prediction worth checking.
 
-**Correctness will be close.** Models read code well, and on a 60-line file `grep` is enough. **The difference will show up in cost** — Q3's chain crosses two files and five hops, which is many searches for an agent and one command for flowdata.
+**Correctness will be close.** Models read code well, and on a 60-line file `grep` is enough. **The difference will show up in cost** — Q3's chain crosses two files and five hops, which is many searches for an agent and one command for vena.
 
 So the hypothesis under test is *"fewer tool calls for the same answer"*, not *"answers otherwise unreachable."* If cost is also a wash, that is a real result and the honest conclusion is that the graph does not earn its place — better to learn that from twenty tasks than after building a server.
 
@@ -739,7 +739,7 @@ That last line used to read "every number here is this repo analysing itself; th
 
 **August 15 2026.** Shallow clone, `analyse()` pointed at `src/`. 309 TypeScript files, ~78k lines, zero runtime dependencies — chosen for being pure TS, mid-sized, and written in a style nothing like this repo's: heavy generics, class hierarchies, middleware composition, JSX.
 
-Everything before this was flowdata analysing flowdata: 8 files, one author, one month, one style. The first foreign repo found two total failures in the first thirty seconds, neither of which eight rounds of self-analysis could have surfaced.
+Everything before this was vena analysing vena: 8 files, one author, one month, one style. The first foreign repo found two total failures in the first thirty seconds, neither of which eight rounds of self-analysis could have surfaced.
 
 #### It did not run
 
@@ -749,7 +749,7 @@ Everything before this was flowdata analysing flowdata: 8 files, one author, one
 
 Test files are excluded here — `expect` (5,874), `toBe` (3,471), `it` (2,508) and `describe` (811) are vitest globals, and including them drags the rate to 60% while saying nothing about the engine. That is a `KNOWN_GLOBALS` shortfall (gap 11's set doesn't know test frameworks), not a resolution failure.
 
-| | flowdata `src/scripts` | Hono `src`, no tests |
+| | vena `src/scripts` | Hono `src`, no tests |
 | --- | --- | --- |
 | files | 8 | 186 |
 | nodes | 221 | 4,719 |

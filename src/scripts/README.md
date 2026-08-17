@@ -1,6 +1,6 @@
-# `src/scripts/` — the flowdata analysis engine
+# `src/scripts/` — the vena analysis engine
 
-This folder is the whole of flowdata's static-analysis core: parse
+This folder is the whole of vena's static-analysis core: parse
 TypeScript/JavaScript source into an AST, walk it once to find every
 declaration and every reference to it, link references across files, and
 trace which declarations feed data into which other declarations. The

@@ -1,20 +1,20 @@
-# flowdata
+# vena
 
 Trace how data flows through a TypeScript/JavaScript codebase, rendered as an interactive graph.
 
-Point it at a project and flowdata parses every file, resolves scope, links uses to declarations across files, and follows values as they flow from one variable into another. Click any symbol to see where it's declared, where it's used, and what it feeds into.
+Point it at a project and vena parses every file, resolves scope, links uses to declarations across files, and follows values as they flow from one variable into another. Click any symbol to see where it's declared, where it's used, and what it feeds into.
 
 Pain point it solves: As the codebase for my project, Resurface, grew, it eventually became harder for me to create a mental map in my head of all the input/output data. So, I started this project and am actively working on it. 
 
-<!-- ![flowdata graph](./docs/demo.png) -->
+<!-- ![vena graph](./docs/demo.png) -->
 
 ## Install
 
 Requires [Bun](https://bun.sh).
 
 ```bash
-git clone https://github.com/temal07/flowdata
-cd flowdata
+git clone https://github.com/temal07/vena
+cd vena
 bun install
 ```
 
@@ -24,7 +24,7 @@ bun install
 flow ./path/to/project
 ```
 
-flowdata scans for `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, and `.cjs` files, analyzes them, and opens a local graph viewer. Search for a symbol to reveal it and its connections; click a node for its declaration site and every use.
+vena scans for `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, and `.cjs` files, analyzes them, and opens a local graph viewer. Search for a symbol to reveal it and its connections; click a node for its declaration site and every use.
 
 ## Where things live
 

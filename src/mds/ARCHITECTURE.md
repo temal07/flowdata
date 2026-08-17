@@ -1,6 +1,6 @@
 # Architecture
 
-How flowdata analyzes a codebase, from source files to a data-flow graph.
+How vena analyzes a codebase, from source files to a data-flow graph.
 
 ## Project status
 
@@ -32,7 +32,7 @@ How flowdata analyzes a codebase, from source files to a data-flow graph.
 
 ## Overview
 
-flowdata runs a single recursive walk over each file's AST (produced by `@typescript-eslint/typescript-estree`), building per-file results keyed by absolute path. Each declaration is identified by `{ file, start }` — a unique coordinate across the whole project, so edges can point at specific nodes.
+vena runs a single recursive walk over each file's AST (produced by `@typescript-eslint/typescript-estree`), building per-file results keyed by absolute path. Each declaration is identified by `{ file, start }` — a unique coordinate across the whole project, so edges can point at specific nodes.
 
 ## Scope resolution
 

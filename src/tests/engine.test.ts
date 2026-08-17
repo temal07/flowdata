@@ -373,7 +373,7 @@ test("JSX is enabled for every extension except .ts", () => {
 // a file. Fixtures are written to a temp dir rather than committed: a
 // deliberately unparseable `.ts` in the repo would fail `tsc --noEmit`.
 async function fixtureDir(files: Record<string, string>): Promise<string> {
-    const dir = `${tmpdir()}/flowdata-test-${crypto.randomUUID()}`;
+    const dir = `${tmpdir()}/vena-test-${crypto.randomUUID()}`;
     for (const [name, body] of Object.entries(files)) {
         await Bun.write(`${dir}/${name}`, body);
     }
